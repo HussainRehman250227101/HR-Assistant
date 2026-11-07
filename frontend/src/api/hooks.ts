@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, qs } from '../lib/api'
 import type {
-  AvailabilitySlot, Candidate, CandidateEvent, Evaluation, Interview, LocalWindow, Paginated, Requisition, Rubric, Screening,
+  AvailabilitySlot, Candidate, CandidateEvent, CommunicationLog, Evaluation, Interview, LocalWindow, Paginated, Requisition, Rubric, Screening,
   ShortlistQueueItem, ShortlistReview, User, WorkflowRun,
 } from '../lib/types'
 
@@ -183,3 +183,18 @@ export const usePlanInterview = (candidateId: string) =>
 export const useInterviewAction = () =>
   useApiMutation(({ id, action, body }: { id: string; action: string; body?: unknown }) =>
     api<Interview>(`/scheduling/interviews/${id}/${action}/`, { method: 'POST', body: body ?? {} }), LIFECYCLE)
+
+// ---- Communications (Module 13) ----
+export const useCommunications = (params: Record<string, string | undefined>, enabled = true) =>
+  useQuery({ queryKey: [...keys.interviews, 'communications', params], queryFn: () => api<CommunicationLog[]>(`/communications/${qs(params)}`), enabled })
+
+export const useDraftInvitation = () =>
+  useApiMutation((interviewId: string) => api<CommunicationLog>(`/communications/interviews/${interviewId}/draft/`, { method: 'POST' }), LIFECYCLE)
+
+export const useUpdateDraft = () =>
+  useApiMutation(({ id, subject, body }: { id: string; subject: string; body: string }) =>
+    api<CommunicationLog>(`/communications/${id}/`, { method: 'PATCH', body: { subject, body } }), LIFECYCLE)
+
+export const useCommunicationAction = () =>
+  useApiMutation(({ id, action }: { id: string; action: 'approve-send' | 'discard' }) =>
+    api<CommunicationLog>(`/communications/${id}/${action}/`, { method: 'POST', body: action === 'approve-send' ? { confirm: true } : {} }), LIFECYCLE)

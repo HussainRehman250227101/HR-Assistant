@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "workflows.apps.WorkflowsConfig",
     "screening.apps.ScreeningConfig",
     "scheduling.apps.SchedulingConfig",
+    "communications.apps.CommunicationsConfig",
 ]
 
 MIDDLEWARE = [
@@ -167,6 +168,10 @@ SCREENING_HUMAN_CONTACT = env("SCREENING_HUMAN_CONTACT", default="the recruiting
 SCHEDULING_MIN_NOTICE_HOURS = env.int("SCHEDULING_MIN_NOTICE_HOURS", default=12)
 SCHEDULING_SLOT_STEP_MINUTES = env.int("SCHEDULING_SLOT_STEP_MINUTES", default=30)
 SCHEDULING_MAX_PROPOSED_SLOTS = env.int("SCHEDULING_MAX_PROPOSED_SLOTS", default=6)
+
+# Module 13: interview invitation emails (sent through EMAIL_BACKEND after explicit HR approval).
+INVITATION_RESCHEDULE_CONTACT = env("INVITATION_RESCHEDULE_CONTACT", default=DEFAULT_FROM_EMAIL) # type:ignore
+INVITATION_MESSAGE_ID_DOMAIN = env("INVITATION_MESSAGE_ID_DOMAIN", default="hr-assistant.local") # type:ignore
 
 # Private resume upload limits and Django multipart request limits.
 RESUME_MAX_FILE_SIZE_MB = env.int("RESUME_MAX_FILE_SIZE_MB", default=10)

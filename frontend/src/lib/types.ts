@@ -327,6 +327,7 @@ export interface Interview {
   candidate_confirmed_at: string | null
   interviewer_confirmed_at: string | null
   cancellation_reason: string
+  sequence: number
   created_by_name: string
   created_at: string
   updated_at: string
@@ -336,4 +337,31 @@ export interface LocalWindow {
   date: string
   start_time: string
   end_time: string
+}
+
+export interface CommunicationLog {
+  public_id: string
+  candidate_reference: string
+  interview_reference: string | null
+  channel: string
+  kind: 'INTERVIEW_INVITATION' | 'INTERVIEW_RESCHEDULE' | 'INTERVIEW_CANCELLATION'
+  template_version: string
+  sequence: number
+  recipient: string
+  cc: string[]
+  subject: string
+  body: string
+  meeting_details: Record<string, string | number>
+  approval_status: 'DRAFT' | 'APPROVED' | 'DISCARDED'
+  approved_by_name: string | null
+  approved_at: string | null
+  send_status: 'NOT_SENT' | 'SENDING' | 'SENT' | 'FAILED'
+  send_attempts: number
+  provider: string
+  provider_message_id: string
+  sent_at: string | null
+  error_code: string
+  error_message: string
+  created_by_name: string
+  created_at: string
 }

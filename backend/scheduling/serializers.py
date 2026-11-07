@@ -65,7 +65,7 @@ class InterviewSerializer(serializers.ModelSerializer):
             "interviewer_email", "status", "duration_minutes", "timezone", "mode", "meeting_link", "location",
             "candidate_availability_note", "candidate_windows", "proposed_slots", "calendar_source",
             "calendar_source_label", "confirmed_start", "confirmed_end", "candidate_confirmed_at",
-            "interviewer_confirmed_at", "cancellation_reason", "created_by_name", "created_at", "updated_at",
+            "interviewer_confirmed_at", "cancellation_reason", "sequence", "created_by_name", "created_at", "updated_at",
         )
         read_only_fields = fields
 

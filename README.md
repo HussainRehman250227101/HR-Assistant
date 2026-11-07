@@ -442,3 +442,23 @@ The `scheduling` app (`/api/v1/scheduling/`) implements the availability half of
 **UI:**
 - The **Interviews & Availability** page lists active and scheduled interviews and lets users manage availability.
 - The candidate **Interview** tab covers planning, slot confirmation, re-proposing and cancelling.
+
+
+## Module 13 — Email Invitation Agent
+
+The `communications` app (`/api/v1/communications/`, recruiters/admins) implements the SRS §11 `CommunicationLog` and the invitation half of Agent 3 (FR-10, FR-11, AC-07, AC-08).
+
+**Flow:**
+1. **Draft.** `POST interviews/<interview_uuid>/draft/` is available once the slot is `SLOT_CONFIRMED`. It renders the versioned template `interview-email-v1` with role, date/time, time zone, duration, format, meeting link/location, interviewer, and rescheduling contact (`INVITATION_RESCHEDULE_CONTACT`). The candidate is the recipient and the interviewer is cc'd. Drafting is idempotent and never sends.
+2. **Edit.** `PATCH <uuid>/` (`subject`, `body`) is allowed only while the message is a draft. Sending is refused if an edit removed a required detail.
+3. **Approve and send.** `POST <uuid>/approve-send/` with `{"confirm": true}` records the approver and time, then sends through Django's `EMAIL_BACKEND` with an iCalendar attachment (`METHOD:REQUEST`, stable UID, `SEQUENCE`).
+   - **Success:** `SENT` with `provider_message_id` and `sent_at`. The interview becomes `SCHEDULED` and the candidate `INTERVIEW_SCHEDULED`.
+   - **Failure:** `FAILED`. The draft and approval are kept, nothing is marked as scheduled, and the same endpoint retries.
+   - **Duplicates:** an atomic claim plus a unique constraint on sent messages (per interview, kind and sequence) prevent duplicate invitations.
+4. **Reschedule.** For a `SCHEDULED` interview, `POST /api/v1/scheduling/interviews/<uuid>/propose/` increments the sequence and returns the candidate to `INTERVIEW_PROPOSED`. Confirming a new slot then drafts an `INTERVIEW_RESCHEDULE` update.
+5. **Cancel.** Cancelling an interview after an invitation was sent automatically drafts an `INTERVIEW_CANCELLATION` notice (`METHOD:CANCEL`), which still needs HR approval to send.
+6. **Discard / list.** `POST <uuid>/discard/` discards a draft. `GET ?candidate=&interview=&pending=1` lists messages.
+
+**Email delivery:** console output by default. Set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` with `EMAIL_HOST*` for real delivery. SMTP reports only acceptance by the provider, not final delivery.
+
+**UI:** the candidate **Interview** tab has the invitation editor ("Approve and send" requires a confirmation checkbox), retry after failure, reschedule, and a communication log, including cancellation notices waiting for approval.

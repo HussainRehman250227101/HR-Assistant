@@ -3,6 +3,7 @@ import { useCandidateInterviews, useCandidateScreenings, useInterviewAction, use
 import { Alert, Badge, Button, Card, Empty, ErrorAlert, Field, Input, KeyValue, Loading, Modal } from '../../components/ui'
 import { BROWSER_TZ, formatDate, formatInZone, humanize } from '../../lib/format'
 import type { Candidate, Interview } from '../../lib/types'
+import { CommunicationsCard, InvitationSection } from './Communications'
 import { InterviewPlanForm } from './InterviewPlanForm'
 
 const ACTIVE = ['PROPOSED', 'NEEDS_HR_COORDINATION', 'SLOT_CONFIRMED', 'SCHEDULED']
@@ -59,14 +60,14 @@ function ActiveInterview({ interview, canEdit, children }: { interview: Intervie
   const [replan, setReplan] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [reason, setReason] = useState('')
-  const canReplan = ['PROPOSED', 'NEEDS_HR_COORDINATION', 'SLOT_CONFIRMED'].includes(interview.status)
+  const canReplan = ['PROPOSED', 'NEEDS_HR_COORDINATION', 'SLOT_CONFIRMED', 'SCHEDULED'].includes(interview.status)
 
   return (
     <Card
       title={<span className="flex items-center gap-2">Interview <Badge value={interview.status} /></span>}
       actions={canEdit && (
         <>
-          {canReplan && <Button size="sm" variant="secondary" onClick={() => setReplan(true)}>Update availability & re-propose</Button>}
+          {canReplan && <Button size="sm" variant="secondary" onClick={() => setReplan(true)}>{interview.status === 'SCHEDULED' ? 'Reschedule' : 'Update availability & re-propose'}</Button>}
           <Button size="sm" variant="ghost" onClick={() => setCancelOpen(true)}>Cancel interview</Button>
         </>
       )}
@@ -77,6 +78,11 @@ function ActiveInterview({ interview, canEdit, children }: { interview: Intervie
           <Alert tone="warning">No shared availability between the candidate's windows and the interviewer's calendar. Coordinate manually: add interviewer availability or new candidate windows, then re-propose.</Alert>
         )}
         {interview.status === 'PROPOSED' && canEdit && <SlotPicker interview={interview} />}
+        {interview.sequence > 0 && interview.status !== 'SCHEDULED' && (
+          <Alert tone="info">Rescheduling: the previously sent time no longer applies. Confirm a new slot, then approve the updated invitation.</Alert>
+        )}
+        {canEdit && <InvitationSection interview={interview} />}
+        {interview.status === 'SCHEDULED' && <Alert tone="success">Invitation approved and sent. The interview is scheduled.</Alert>}
         {children}
       </div>
       <Modal open={replan} title="Update availability and re-propose slots" onClose={() => setReplan(false)} wide>
@@ -119,6 +125,7 @@ export function InterviewPanel({ candidate, canEdit }: { candidate: Candidate; c
           {i.cancellation_reason && <p className="mt-3 text-sm text-slate-600">Cancelled: {i.cancellation_reason}</p>}
         </Card>
       ))}
+      {canEdit && <CommunicationsCard candidateId={candidate.public_id} />}
     </div>
   )
 }

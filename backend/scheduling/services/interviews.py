@@ -34,7 +34,10 @@ def _apply_proposal(interview, actor):
     interview.proposed_slots = slots
     interview.calendar_source = CALENDAR_SOURCE_INTERNAL
     interview.status = InterviewStatus.PROPOSED if slots else InterviewStatus.NEEDS_HR_COORDINATION
-    interview.confirmed_start = interview.confirmed_end = None
+    if interview.sequence == 0:
+        # Before any invitation is sent the tentative slot is simply released. After a sent invitation the
+        # last communicated time is kept (it is no longer booked) so a cancellation notice can reference it.
+        interview.confirmed_start = interview.confirmed_end = None
     interview.candidate_confirmed_at = interview.interviewer_confirmed_at = None
     interview.save()
     # Audit every calendar check (SRS §13).
@@ -74,8 +77,10 @@ def plan_interview(candidate, actor, data):
 
 def repropose(interview, actor, data):
     """Re-run the availability check, optionally with new candidate windows / interviewer / details."""
-    if interview.status not in {InterviewStatus.PROPOSED, InterviewStatus.NEEDS_HR_COORDINATION, InterviewStatus.SLOT_CONFIRMED}:
-        raise SchedulingError("Slots can only be re-proposed before an invitation is sent. Use reschedule for sent invitations.")
+    if interview.status not in {InterviewStatus.PROPOSED, InterviewStatus.NEEDS_HR_COORDINATION,
+                                InterviewStatus.SLOT_CONFIRMED, InterviewStatus.SCHEDULED}:
+        raise SchedulingError("This interview can no longer be rescheduled.")
+    rescheduling = interview.status == InterviewStatus.SCHEDULED
     for field in ("interviewer", "duration_minutes", "timezone", "mode", "meeting_link", "location",
                   "candidate_availability_note", "candidate_windows"):
         if field in data:
@@ -83,6 +88,11 @@ def repropose(interview, actor, data):
     get_zone(interview.timezone)
     _validate_details(interview.mode, interview.meeting_link, interview.location)
     with transaction.atomic():
+        if rescheduling:
+            # A sent invitation is superseded: the next message is an update with a higher iCalendar SEQUENCE.
+            interview.sequence += 1
+            change_candidate_status(interview.candidate, CandidateStatus.INTERVIEW_PROPOSED, actor,
+                                    "Interview being rescheduled", interview_id=str(interview.public_id))
         return _apply_proposal(interview, actor)
 
 
@@ -119,6 +129,10 @@ def cancel_interview(interview, actor, reason):
         raise SchedulingError("This interview is already cancelled.")
     if not reason.strip():
         raise SchedulingError("A cancellation reason is required.")
+    from communications.models import CommunicationLog, SendStatus
+    from communications.services import CommunicationError, draft_message
+
+    invitation_sent = CommunicationLog.objects.filter(interview=interview, send_status=SendStatus.SENT).exists()
     was_scheduled = interview.status == InterviewStatus.SCHEDULED
     with transaction.atomic():
         interview.status = InterviewStatus.CANCELLED
@@ -130,4 +144,10 @@ def cancel_interview(interview, actor, reason):
             change_candidate_status(interview.candidate, CandidateStatus.APPROVED_FOR_INTERVIEW, actor,
                                     "Interview cancelled; candidate remains approved for interview",
                                     interview_id=str(interview.public_id))
+        if invitation_sent:
+            # The candidate already received an invitation: prepare a cancellation notice for HR to approve.
+            try:
+                draft_message(interview, actor, kind="INTERVIEW_CANCELLATION")
+            except CommunicationError:
+                pass
     return interview

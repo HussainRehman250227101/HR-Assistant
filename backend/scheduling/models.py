@@ -70,6 +70,7 @@ class Interview(models.Model):
     candidate_confirmed_at = models.DateTimeField(null=True, blank=True)
     interviewer_confirmed_at = models.DateTimeField(null=True, blank=True)
     cancellation_reason = models.TextField(blank=True)
+    sequence = models.PositiveIntegerField(default=0, help_text="Incremented on each reschedule after an invitation was sent.")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="interviews_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
