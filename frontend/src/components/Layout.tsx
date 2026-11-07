@@ -3,13 +3,15 @@ import { useAuth } from '../auth/AuthContext'
 import { humanize } from '../lib/format'
 
 const NAV = [
+  { to: '/', label: 'Dashboard', end: true },
   { to: '/requisitions', label: 'Requisitions' },
   { to: '/candidates', label: 'Candidates' },
   { to: '/shortlist', label: 'Shortlist Review', recruiter: true },
   { to: '/screening', label: 'Screening', recruiter: true },
   { to: '/interviews', label: 'Interviews & Availability' },
+  { to: '/activity', label: 'Audit Log' },
   { to: '/settings', label: 'Integrations', recruiter: true },
-]
+] as { to: string; label: string; end?: boolean; recruiter?: boolean }[]
 
 export function Layout() {
   const { user, logout, isRecruiter } = useAuth()
@@ -25,6 +27,7 @@ export function Layout() {
             <NavLink
               key={item.to}
               to={item.to}
+              end={item.end}
               className={({ isActive }) =>
                 `rounded-md px-3 py-2 text-sm ${isActive ? 'bg-slate-700 text-white' : 'text-slate-300 hover:bg-slate-800'}`
               }

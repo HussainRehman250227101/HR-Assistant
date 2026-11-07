@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "screening.apps.ScreeningConfig",
     "scheduling.apps.SchedulingConfig",
     "communications.apps.CommunicationsConfig",
+    "dashboard.apps.DashboardConfig",
 ]
 
 MIDDLEWARE = [

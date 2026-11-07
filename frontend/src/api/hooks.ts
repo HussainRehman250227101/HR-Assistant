@@ -198,3 +198,44 @@ export const useUpdateDraft = () =>
 export const useCommunicationAction = () =>
   useApiMutation(({ id, action }: { id: string; action: 'approve-send' | 'discard' }) =>
     api<CommunicationLog>(`/communications/${id}/${action}/`, { method: 'POST', body: action === 'approve-send' ? { confirm: true } : {} }), LIFECYCLE)
+
+// ---- Dashboard (Module 14) ----
+export interface DashboardSummary {
+  generated_at: string
+  total_candidates: number
+  active_candidates: number
+  open_requisitions: number
+  by_status: { status: string; label: string; count: number }[]
+  attention: { key: string; label: string; link: string; severity: 'critical' | 'warning' | 'info'; count: number }[]
+  upcoming_interviews: { interview_id: string; candidate_id: string; candidate_name: string; requisition_title: string; interviewer_name: string; start: string; timezone: string; mode: string }[]
+}
+
+export interface PipelineRow {
+  public_id: string
+  name: string
+  requisition_title: string
+  requisition_reference: string
+  current_status: string
+  score: number | null
+  confidence: string | null
+  screening_status: string | null
+  screening_call_status: string | null
+  interview_status: string | null
+  interview_start: string | null
+  interview_timezone: string | null
+  updated_at: string
+}
+
+export type ActivityRow = CandidateEvent & { candidate_id: string; candidate_name: string }
+
+export const useDashboardSummary = (requisition?: string) =>
+  useQuery({ queryKey: [...keys.dashboard, 'summary', requisition], queryFn: () => api<DashboardSummary>(`/dashboard/summary/${qs({ requisition })}`), refetchInterval: 60_000 })
+
+export const usePipeline = (params: Record<string, string | number | undefined>) =>
+  useQuery({ queryKey: [...keys.dashboard, 'pipeline', params], queryFn: () => api<Paginated<PipelineRow>>(`/dashboard/pipeline/${qs(params)}`) })
+
+export const useActivityLog = (params: Record<string, string | number | undefined>) =>
+  useQuery({ queryKey: [...keys.dashboard, 'activity', params], queryFn: () => api<Paginated<ActivityRow>>(`/dashboard/activity/${qs(params)}`) })
+
+export const useEventTypes = () =>
+  useQuery({ queryKey: ['event-types'], queryFn: () => api<{ value: string; label: string }[]>('/dashboard/event-types/'), staleTime: Infinity })

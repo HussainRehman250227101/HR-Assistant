@@ -4,6 +4,8 @@ import { Layout } from './components/Layout'
 import { Loading } from './components/ui'
 import { CandidateDetailPage } from './pages/candidates/CandidateDetailPage'
 import { CandidatesPage } from './pages/candidates/CandidatesPage'
+import { ActivityLogPage } from './pages/ActivityLogPage'
+import { DashboardPage } from './pages/DashboardPage'
 import { InterviewsPage } from './pages/interviews/InterviewsPage'
 import { LoginPage } from './pages/LoginPage'
 import { RequisitionDetailPage } from './pages/requisitions/RequisitionDetailPage'
@@ -25,7 +27,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route element={<Protected><Layout /></Protected>}>
-        <Route index element={<Navigate to="/candidates" replace />} />
+        <Route index element={<DashboardPage />} />
+        <Route path="activity" element={<ActivityLogPage />} />
         <Route path="requisitions" element={<RequisitionsPage />} />
         <Route path="requisitions/new" element={<RequisitionFormPage />} />
         <Route path="requisitions/:ref" element={<RequisitionDetailPage />} />

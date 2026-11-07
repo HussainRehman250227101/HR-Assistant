@@ -63,6 +63,8 @@ Each app is mounted under `/api/v1/<prefix>/` in `config/urls.py`. Business logi
 
 | `communications` (`communications/`) | SRS `CommunicationLog`: invitation, reschedule and cancellation emails; draft → HR approve → idempotent send through `EMAIL_BACKEND` with ICS; failures keep the draft | `services.py`, `templates_text.py` |
 
+| `dashboard` (`dashboard/`) | Read-only aggregates: status counts, needs-attention list, pipeline rows, cross-candidate audit log (all scoped by `candidates_visible_to`) | `views.py` |
+
 Shared helper: `candidates/services/status.py` → `change_candidate_status()` / `record_event()`; use it for every new status change.
 
 ### Frontend (`frontend/src/`)
@@ -111,9 +113,9 @@ Status as verified on 2026-11-07 (Module 10 branch). **Update this table when a 
 | FR-09 | Candidate + interviewer availability, time zones, duration | Done (M12) | `scheduling/services/slots.py` (internal availability calendar, clearly labelled; no Google/MS integration), `services/interviews.py` |
 | FR-10 | Invitation draft with all required fields | Done (M13) | `communications/templates_text.py` (versioned template + ICS), required-field guard on send |
 | FR-11 | Human confirmation before sending invitation | Done (M13) | `communications/services.approve_and_send` (explicit `confirm`, approver recorded, idempotent send) |
-| FR-12 | Status + event history from resume received → interview scheduled | Partial | All 10 SRS §9 statuses exist in `CandidateStatus`; transitions implemented only up to `APPROVED_FOR_SCREENING`/`CLOSED`; history in `CandidateEvent` |
-| FR-13 | Actionable errors; safe retries without duplicate outreach | Partial | Extraction retry, workflow resume retry, one active `WorkflowRun` per candidate; call/calendar/email N/A yet |
-| FR-14 | Who approved, timestamps, model/provider versions, changes | Partial | `ShortlistReview.decided_by`, evaluation version fields, rubric `updated_by`; no generic audit for config changes |
+| FR-12 | Status + event history from resume received → interview scheduled | Done (M14) | All 10 SRS §9 statuses reachable; every change via `change_candidate_status()` + `CandidateEvent`; dashboard + audit log UI |
+| FR-13 | Actionable errors; safe retries without duplicate outreach | Done | Retries: extraction, workflow resume, screening analysis, email send. Atomic claims on calls and emails; dashboard "Needs attention" |
+| FR-14 | Who approved, timestamps, model/provider versions, changes | Mostly done | Decision records (shortlist, screening, invitation approver), model/prompt versions, call attempts, calendar checks; still no generic audit for requisition/config edits |
 | FR-15 | Restrict candidate data/config to authorized users | Done for implemented resources | `accounts/permissions.py`, `candidates_visible_to()` |
 
 SRS §11 data model → code: Requisition → `requisitions.Requisition` (+`scoring.ScoringRubric`); Candidate → `candidates.Candidate` (+`ResumeDocument`); ResumeEvaluation → `scoring.ResumeEvaluation`; AuditEvent → `candidates.CandidateEvent` (candidate-scoped only) + `reviews.ShortlistReview`. Screening → `screening.Screening` (+`ScreeningCallAttempt`, the call log). Interview → `scheduling.Interview` (+`AvailabilitySlot`); CommunicationLog → `communications.CommunicationLog`.
@@ -227,7 +229,8 @@ Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/
   - 11 Screening Review: done on `feature/module-11-screening-review` (branched from the Module 10 branch).
   - 12 Scheduling & Calendar Agent: done on `feature/module-12-scheduling-calendar`.
   - 13 Email Invitation Agent: done on `feature/module-13-email-invitations`.
-  - Remaining modules, as named by the user on 2026-11-07: 14 Dashboard & Candidate Lifecycle Tracking, 15 Production Hardening & QA.
+  - 14 Dashboard & Candidate Lifecycle Tracking: done on `feature/module-14-dashboard-lifecycle`.
+  - Remaining modules, as named by the user on 2026-11-07: 15 Production Hardening & QA.
   - Every module ships both backend and frontend UI (see "Development Workflow — Mandatory" below). Branches are not merged into `main` automatically.
 - **Branch convention:** `feature/module-NN-<slug>` or `feature/modules-NN-NN-NN-<slug>` off `main`, merged with a merge commit.
 - **Definition of done for a module:**

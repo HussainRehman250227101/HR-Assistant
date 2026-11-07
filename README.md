@@ -462,3 +462,24 @@ The `communications` app (`/api/v1/communications/`, recruiters/admins) implemen
 **Email delivery:** console output by default. Set `EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend` with `EMAIL_HOST*` for real delivery. SMTP reports only acceptance by the provider, not final delivery.
 
 **UI:** the candidate **Interview** tab has the invitation editor ("Approve and send" requires a confirmation checkbox), retry after failure, reschedule, and a communication log, including cancellation notices waiting for approval.
+
+
+## Module 14 — Dashboard & Candidate Lifecycle Tracking
+
+The read-only `dashboard` app (`/api/v1/dashboard/`) is available to all authenticated roles. All data is scoped by `candidates_visible_to`, so hiring managers see only their requisitions. It covers AC-09, FR-12, FR-13 and FR-14.
+
+| Endpoint | Returns |
+|---|---|
+| `summary/?requisition=` | Counts for all 10 SRS §9 statuses, total/active candidates, open requisitions, a **needs attention** list and interviews in the next 14 days |
+| `pipeline/?status=&search=&requisition=&page=` | One row per candidate: status, latest score and confidence, latest screening outcome, latest interview slot |
+| `activity/?event_type=&candidate=&page=` | The append-only audit trail across candidates (status changes, approvals, call attempts, calendar checks, emails) |
+| `event-types/` | Labels for the audit-log filter |
+
+The needs attention list covers:
+- **Pending human decisions:** shortlist, screening review, invitation approval, cancellation notices.
+- **Errors with retries:** resume extraction, scoring workflow, screening analysis, email sending.
+- **Next actions:** resumes to extract, calls to place, interviews to plan, slots to confirm, coordination tasks.
+
+**UI:**
+- **Dashboard** (home page): stat tiles, a lifecycle status bar list (click a bar to filter candidates), linked attention items labelled by severity, upcoming interviews in candidate and local time, and a filterable pipeline table. It refreshes every minute.
+- **Audit Log:** a paginated, filterable event history.

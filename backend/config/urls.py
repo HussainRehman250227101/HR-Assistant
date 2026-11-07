@@ -15,4 +15,5 @@ urlpatterns = [
     path("api/v1/screening/", include("screening.urls")),
     path("api/v1/scheduling/", include("scheduling.urls")),
     path("api/v1/communications/", include("communications.urls")),
+    path("api/v1/dashboard/", include("dashboard.urls")),
 ]
