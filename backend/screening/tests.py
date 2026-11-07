@@ -52,7 +52,7 @@ class FakeLLM:
     def __init__(self, output):
         self.output = output
 
-    def generate_structured(self, messages, response_model):
+    def generate_structured(self, messages, response_model, **kwargs):
         return self.output
 
 

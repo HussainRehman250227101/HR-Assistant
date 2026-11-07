@@ -1,5 +1,7 @@
 """Production settings with explicit deployment safety checks."""
 
+from datetime import timedelta
+
 from django.core.exceptions import ImproperlyConfigured
 
 from .base import *  # noqa: F403
@@ -29,3 +31,21 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = env.bool(
     default=False,
 )
 SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
+if env.bool("USE_X_FORWARDED_PROTO", default=False):
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+
+# Short-lived access tokens in production; the SPA refreshes them automatically.
+SIMPLE_JWT = {
+    **SIMPLE_JWT,  # noqa: F405
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_ACCESS_TOKEN_MINUTES", default=15)),
+    "REFRESH_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_REFRESH_TOKEN_MINUTES", default=60 * 12)),
+}
+
+# Live candidate calls require a verified webhook so call results cannot be forged.
+if ELEVENLABS_API_KEY and not ELEVENLABS_WEBHOOK_SECRET:  # noqa: F405
+    raise ImproperlyConfigured("Set ELEVENLABS_WEBHOOK_SECRET when ElevenLabs calling is enabled in production.")
+
+if EMAIL_BACKEND.endswith("console.EmailBackend"):  # noqa: F405
+    import warnings
+
+    warnings.warn("Production is using the console email backend; invitations will not be delivered.", stacklevel=1)

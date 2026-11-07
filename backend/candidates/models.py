@@ -61,6 +61,7 @@ class Candidate(models.Model):
     current_status = models.CharField(max_length=40, choices=CandidateStatus.choices, default=CandidateStatus.RESUME_RECEIVED, db_index=True)
     identity_review_required = models.BooleanField(default=False)
     closed_reason = models.TextField(blank=True)
+    personal_data_erased_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="candidates_created")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -148,6 +149,8 @@ class CandidateEvent(models.Model):
         INVITATION_APPROVED = "INVITATION_APPROVED", "Invitation Approved"
         INVITATION_SENT = "INVITATION_SENT", "Invitation Sent"
         INVITATION_SEND_FAILED = "INVITATION_SEND_FAILED", "Invitation Send Failed"
+        CANDIDATE_CLOSED = "CANDIDATE_CLOSED", "Candidate Closed"
+        PERSONAL_DATA_ERASED = "PERSONAL_DATA_ERASED", "Personal Data Erased"
 
     candidate = models.ForeignKey(Candidate, on_delete=models.CASCADE, related_name="events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="candidate_events")

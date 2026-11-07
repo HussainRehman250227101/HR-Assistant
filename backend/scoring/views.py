@@ -7,6 +7,7 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 
 from accounts.permissions import IsRecruiterOrAdmin
+from audit.models import log_audit
 from candidates.models import Candidate
 from llm.exceptions import LLMConfigurationError, LLMProviderError
 from requisitions.models import Requisition
@@ -48,6 +49,9 @@ class RequisitionRubricView(GenericAPIView):
                 notes=data.get("notes", ""),
                 updated_by=request.user,
             )
+            log_audit(request.user, "RUBRIC_VERSION_CREATED", "requisition", requisition.reference_code,
+                      version=rubric.version, previous_weights=current.weights, weights=rubric.weights,
+                      notes=rubric.notes)
         return Response(ScoringRubricSerializer(rubric).data)
 
 

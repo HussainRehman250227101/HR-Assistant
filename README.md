@@ -483,3 +483,58 @@ The needs attention list covers:
 **UI:**
 - **Dashboard** (home page): stat tiles, a lifecycle status bar list (click a bar to filter candidates), linked attention items labelled by severity, upcoming interviews in candidate and local time, and a filterable pipeline table. It refreshes every minute.
 - **Audit Log:** a paginated, filterable event history.
+
+
+## Module 15 — Production Hardening & QA
+
+**System audit (SRS §11 `AuditEvent`, FR-14).** The `audit` app records requisition create/update/delete (with changed fields and status transitions), every rubric version change (old and new weights), and personal-data erasure. View it at `GET /api/v1/audit/?action=&entity_type=&entity_id=` (recruiters/admins), or in the UI under **Audit Log → Requisition & configuration changes**.
+
+**Candidate closure and privacy (SRS §9, §12, §13):**
+- `POST /api/v1/candidates/<uuid>/close/` (recruiter, `reason` required) closes a candidate.
+  - Pending screenings and unsent interviews are cancelled.
+  - It refuses while a call is live, or while an interview is `SCHEDULED` (cancel that first so the candidate is notified).
+- `POST /api/v1/candidates/<uuid>/erase-personal-data/` (HR admin, closed candidates only, `reason` required) erases personal data:
+  - **Removed:** name, contact details, resume files and text, evidence quotes, transcripts, answers, availability, email bodies and recipients.
+  - **Kept:** statuses, decisions, timestamps, actors and model versions.
+  - Afterwards the record can no longer be edited.
+- `python manage.py apply_retention_policy [--dry-run]` erases candidates closed for longer than `CANDIDATE_RETENTION_DAYS` (default 365). Schedule it daily.
+- `closed_reason` is now read-only through the candidate API; it is set only by decisions or closure.
+
+**Production settings (`DJANGO_SETTINGS_MODULE=config.django.production`):**
+- `DEBUG` is off.
+- Startup fails without a unique `SECRET_KEY` and `ALLOWED_HOSTS`.
+- Secure cookies and SSL redirect are on; `USE_X_FORWARDED_PROTO` is optional for a TLS proxy.
+- JWT access tokens last 15 minutes and refresh tokens 12 hours; the SPA refreshes automatically.
+- If ElevenLabs is configured, `ELEVENLABS_WEBHOOK_SECRET` is required.
+- A console email backend triggers a warning.
+- `python manage.py check --deploy` reports only the HSTS subdomain/preload options. Set those for your domain.
+
+**Frontend:** a global error boundary; admin-only **Erase personal data** and recruiter **Close candidate** actions on the candidate page.
+
+**QA:**
+- `dashboard/test_end_to_end.py` drives the complete AC-11 flow through the REST API with synthetic data: requisition → DOCX resume upload → extraction → LangGraph scoring → shortlist approval → AI screening call → transcript analysis → screening approval → availability → slot proposal and confirmation → invitation draft → approval → send (and the duplicate send is refused). Only Azure, ElevenLabs/Twilio and SMTP are faked.
+- The full backend suite is 82 tests: `python manage.py test accounts requisitions candidates llm scoring reviews workflows screening scheduling communications dashboard audit`.
+
+### Acceptance criteria status (SRS §15)
+
+| AC | Status | Evidence |
+|---|---|---|
+| AC-01–AC-03 | Met | Requisitions, resume intake/extraction, evidence-based scoring (Modules 03–07) |
+| AC-04 | Met | Shortlist gate; nothing is contacted from a score alone |
+| AC-05 | Met in code; live call not verified | Approved script, consent, escalation, retry limits (Module 10). Needs a live ElevenLabs/Twilio test |
+| AC-06 | Met | Verified candidate statements kept separate from AI interpretation; HR review (Module 11) |
+| AC-07 | Met (internal calendar) | Mutual availability, time zones, confirmation of both parties (Module 12) |
+| AC-08 | Met | Invitation only after recorded approval; idempotent send (Module 13) |
+| AC-09 | Met | Dashboard and audit logs (Module 14) |
+| AC-10 | Met | Retries without duplicate calls/emails: atomic claims, unique constraints, durable state |
+| AC-11 | Met with fakes | Automated end-to-end test; a live demo needs provider credentials |
+| AC-12 | Met | This README |
+
+**Not done / external:**
+- Live Twilio/ElevenLabs calls and SMTP delivery need credentials and a public webhook URL.
+- No Google/Microsoft calendar integration (the internal calendar is labelled as such).
+- No OCR.
+- SQLite remains the database.
+- No measured performance benchmark against live Azure.
+- No frontend unit tests.
+- JWTs are stored in `localStorage`.

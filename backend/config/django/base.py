@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "scheduling.apps.SchedulingConfig",
     "communications.apps.CommunicationsConfig",
     "dashboard.apps.DashboardConfig",
+    "audit.apps.AuditConfig",
 ]
 
 MIDDLEWARE = [
@@ -117,8 +118,9 @@ REST_FRAMEWORK = {
 }
 
 SIMPLE_JWT = {
-    "ACCESS_TOKEN_LIFETIME": __import__("datetime").timedelta(days=10),
-    "REFRESH_TOKEN_LIFETIME": __import__("datetime").timedelta(days=10),
+    # Defaults keep the existing 10-day local lifetimes; production.py shortens them (see JWT_* env vars).
+    "ACCESS_TOKEN_LIFETIME": __import__("datetime").timedelta(minutes=env.int("JWT_ACCESS_TOKEN_MINUTES", default=60 * 24 * 10)),
+    "REFRESH_TOKEN_LIFETIME": __import__("datetime").timedelta(minutes=env.int("JWT_REFRESH_TOKEN_MINUTES", default=60 * 24 * 10)),
     "ROTATE_REFRESH_TOKENS": True,
     "BLACKLIST_AFTER_ROTATION": True,
     "AUTH_HEADER_TYPES": ("Bearer",),
@@ -173,6 +175,9 @@ SCHEDULING_MAX_PROPOSED_SLOTS = env.int("SCHEDULING_MAX_PROPOSED_SLOTS", default
 # Module 13: interview invitation emails (sent through EMAIL_BACKEND after explicit HR approval).
 INVITATION_RESCHEDULE_CONTACT = env("INVITATION_RESCHEDULE_CONTACT", default=DEFAULT_FROM_EMAIL) # type:ignore
 INVITATION_MESSAGE_ID_DOMAIN = env("INVITATION_MESSAGE_ID_DOMAIN", default="hr-assistant.local") # type:ignore
+
+# Module 15: data retention for closed candidates (python manage.py apply_retention_policy).
+CANDIDATE_RETENTION_DAYS = env.int("CANDIDATE_RETENTION_DAYS", default=365)
 
 # Private resume upload limits and Django multipart request limits.
 RESUME_MAX_FILE_SIZE_MB = env.int("RESUME_MAX_FILE_SIZE_MB", default=10)

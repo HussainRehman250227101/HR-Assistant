@@ -63,7 +63,8 @@ Each app is mounted under `/api/v1/<prefix>/` in `config/urls.py`. Business logi
 
 | `communications` (`communications/`) | SRS `CommunicationLog`: invitation, reschedule and cancellation emails; draft → HR approve → idempotent send through `EMAIL_BACKEND` with ICS; failures keep the draft | `services.py`, `templates_text.py` |
 
-| `dashboard` (`dashboard/`) | Read-only aggregates: status counts, needs-attention list, pipeline rows, cross-candidate audit log (all scoped by `candidates_visible_to`) | `views.py` |
+| `dashboard` (`dashboard/`) | Read-only aggregates: status counts, needs-attention list, pipeline rows, cross-candidate audit log (all scoped by `candidates_visible_to`); hosts the AC-11 end-to-end test | `views.py`, `test_end_to_end.py` |
+| `audit` (`audit/`) | SRS `AuditEvent` for non-candidate changes; `log_audit(actor, action, entity_type, entity_id, **details)` | `models.py` |
 
 Shared helper: `candidates/services/status.py` → `change_candidate_status()` / `record_event()`; use it for every new status change.
 
@@ -115,12 +116,17 @@ Status as verified on 2026-11-07 (Module 10 branch). **Update this table when a 
 | FR-11 | Human confirmation before sending invitation | Done (M13) | `communications/services.approve_and_send` (explicit `confirm`, approver recorded, idempotent send) |
 | FR-12 | Status + event history from resume received → interview scheduled | Done (M14) | All 10 SRS §9 statuses reachable; every change via `change_candidate_status()` + `CandidateEvent`; dashboard + audit log UI |
 | FR-13 | Actionable errors; safe retries without duplicate outreach | Done | Retries: extraction, workflow resume, screening analysis, email send. Atomic claims on calls and emails; dashboard "Needs attention" |
-| FR-14 | Who approved, timestamps, model/provider versions, changes | Mostly done | Decision records (shortlist, screening, invitation approver), model/prompt versions, call attempts, calendar checks; still no generic audit for requisition/config edits |
+| FR-14 | Who approved, timestamps, model/provider versions, changes | Done (M15) | Decision records (shortlist, screening, invitation approver), model/prompt versions, call attempts, calendar checks; `audit.AuditEvent` for requisition/rubric/erasure changes |
 | FR-15 | Restrict candidate data/config to authorized users | Done for implemented resources | `accounts/permissions.py`, `candidates_visible_to()` |
 
-SRS §11 data model → code: Requisition → `requisitions.Requisition` (+`scoring.ScoringRubric`); Candidate → `candidates.Candidate` (+`ResumeDocument`); ResumeEvaluation → `scoring.ResumeEvaluation`; AuditEvent → `candidates.CandidateEvent` (candidate-scoped only) + `reviews.ShortlistReview`. Screening → `screening.Screening` (+`ScreeningCallAttempt`, the call log). Interview → `scheduling.Interview` (+`AvailabilitySlot`); CommunicationLog → `communications.CommunicationLog`.
+SRS §11 data model → code: Requisition → `requisitions.Requisition` (+`scoring.ScoringRubric`); Candidate → `candidates.Candidate` (+`ResumeDocument`); ResumeEvaluation → `scoring.ResumeEvaluation`; AuditEvent → `candidates.CandidateEvent` (candidate-scoped) + `audit.AuditEvent` (requisitions, rubrics, privacy actions) + the decision records. Screening → `screening.Screening` (+`ScreeningCallAttempt`, the call log). Interview → `scheduling.Interview` (+`AvailabilitySlot`); CommunicationLog → `communications.CommunicationLog`.
 
-Acceptance criteria (SRS §15): AC-01–AC-04 are covered by the implemented modules. AC-05–AC-08 and AC-11 depend on the screening and scheduling agents. AC-09 needs a dashboard (no frontend yet). AC-10 is partially covered. AC-12 (README) is maintained per module.
+Acceptance criteria (SRS §15): the status table is in the README's Module 15 section.
+- AC-01 to AC-10 and AC-12 are met in code.
+- AC-05 still needs a live ElevenLabs/Twilio verification.
+- AC-11 is covered by `dashboard/test_end_to_end.py`, with fake providers.
+
+Privacy: closure via `candidates/services/privacy.close_candidate`; erasure via `erase_personal_data` (admin only, closed candidates). Retention runs with `apply_retention_policy` (`CANDIDATE_RETENTION_DAYS`).
 
 ### Implementation constraints from the SRS (apply to all new work)
 
@@ -187,12 +193,14 @@ python manage.py runserver              # API at http://127.0.0.1:8000/api/v1/
 python manage.py check
 python manage.py makemigrations --check --dry-run
 
-python manage.py test accounts requisitions candidates llm scoring reviews workflows screening   # full suite (Django runner, no pytest)
+python manage.py test accounts requisitions candidates llm scoring reviews workflows screening scheduling communications dashboard audit   # full suite, 82 tests (Django runner, no pytest)
 python manage.py test scoring                                                          # one app
 python manage.py test scoring.tests.ScoringCalculationTests.test_missing_evidence_is_excluded_from_weighted_denominator
 
 python manage.py process_pending_resumes --limit 20    # resume extraction worker
 python manage.py sync_screening_calls --limit 20       # poll in-progress screening calls (webhook fallback)
+python manage.py apply_retention_policy --dry-run      # erase closed candidates past CANDIDATE_RETENTION_DAYS (drop --dry-run to apply)
+# production check (set SECRET_KEY/ALLOWED_HOSTS env first): $env:DJANGO_SETTINGS_MODULE='config.django.production'; python manage.py check --deploy
 ```
 
 Screening tests use `FakeVoiceClient` / `FakeLLM` (`screening/tests.py`) and must `override_settings` empty ElevenLabs keys whenever a code path could reach the real client, because a developer `.env` may hold live keys.
@@ -205,7 +213,13 @@ Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/
 
 - **Encoding pitfall (Windows PowerShell 5.1):** `Get-Content` reads BOM-less UTF-8 as ANSI, so a `Get-Content | Set-Content` round trip garbles non-ASCII text (§, →, —). Edit files with the editor tools or Python instead. This happened once to this file and was repaired.
 - The README says Python 3.12, but the existing `myenv` is Python 3.14.7.
-- There's no OCR, no retention/deletion policy, and no generic audit for configuration changes (all SRS items).
+- Gaps against the SRS:
+  - no OCR;
+  - no Google/Microsoft calendar or email-provider delivery receipts (SMTP acceptance only);
+  - no performance benchmark against live Azure;
+  - no frontend unit tests;
+  - JWTs are stored in `localStorage`;
+  - SQLite is still the database (PostgreSQL is planned).
 - **Live Twilio/ElevenLabs calls have not been verified** (no credentials in this environment). The ElevenLabs request/response shapes in `voice.py` follow the public API docs; confirm them on the first live call. The webhook needs a public URL (tunnel); otherwise run `sync_screening_calls`.
 - Screening is orchestrated by a persisted Django state machine (`Screening.status` + atomic claims), not LangGraph. Only resume scoring runs in a LangGraph graph.
 - Fixed in M10: the LangGraph test `KeyError: 'decision'` (the state keys are now declared in `RecruitmentWorkflowState`).
@@ -230,7 +244,8 @@ Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/
   - 12 Scheduling & Calendar Agent: done on `feature/module-12-scheduling-calendar`.
   - 13 Email Invitation Agent: done on `feature/module-13-email-invitations`.
   - 14 Dashboard & Candidate Lifecycle Tracking: done on `feature/module-14-dashboard-lifecycle`.
-  - Remaining modules, as named by the user on 2026-11-07: 15 Production Hardening & QA.
+  - 15 Production Hardening & QA: done on `feature/module-15-hardening-qa`.
+  - Branches are stacked: each module branch starts from the previous one, so `feature/module-15-hardening-qa` contains Modules 10–15. None are merged into `main`; merging is the user's decision.
   - Every module ships both backend and frontend UI (see "Development Workflow — Mandatory" below). Branches are not merged into `main` automatically.
 - **Branch convention:** `feature/module-NN-<slug>` or `feature/modules-NN-NN-NN-<slug>` off `main`, merged with a merge commit.
 - **Definition of done for a module:**

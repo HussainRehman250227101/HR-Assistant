@@ -8,6 +8,7 @@ import { InterviewPanel } from '../interviews/InterviewPanel'
 import { ScreeningPanel } from '../screening/ScreeningPanel'
 import { ActivityPanel } from './ActivityPanel'
 import { CandidateFormModal } from './CandidateFormModal'
+import { PrivacyActions } from './PrivacyActions'
 import { ResumesPanel } from './ResumesPanel'
 import { ScoringPanel } from './ScoringPanel'
 
@@ -44,8 +45,12 @@ export function CandidateDetailPage() {
       <PageHeader
         title={<span className="flex flex-wrap items-center gap-3">{c.display_name} <Badge value={c.current_status} /></span>}
         subtitle={requisition ? <Link className="text-indigo-700 hover:underline" to={`/requisitions/${requisition.reference_code}`}>{requisition.title}</Link> : null}
-        actions={isRecruiter && c.current_status !== 'CLOSED' && <Button variant="secondary" onClick={() => setEditOpen(true)}>Edit details</Button>}
+        actions={<>
+          {isRecruiter && c.current_status !== 'CLOSED' && <Button variant="secondary" onClick={() => setEditOpen(true)}>Edit details</Button>}
+          <PrivacyActions candidate={c} />
+        </>}
       />
+      {c.personal_data_erased_at && <div className="mb-4"><Alert tone="info">Personal data erased on {formatDate(c.personal_data_erased_at)}. Only the anonymised audit record remains.</Alert></div>}
       <div className="mb-4"><Stepper status={c.current_status} /></div>
       {c.current_status === 'CLOSED' && <div className="mb-4"><Alert tone="info">Closed: {c.closed_reason || 'no reason recorded'}</Alert></div>}
       {c.identity_review_required && <div className="mb-4"><Alert tone="warning">Identity details pending review. Enter the candidate's name and contact details before approving screening.</Alert></div>}

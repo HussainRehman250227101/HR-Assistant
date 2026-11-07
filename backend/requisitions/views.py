@@ -6,6 +6,7 @@ from django.db.models import Q
 
 from accounts.models import UserRole
 from accounts.permissions import IsRecruiterOrAdmin
+from audit.models import log_audit
 from .models import Requisition, RequisitionStatus
 from .serializers import RequisitionSerializer
 
@@ -59,7 +60,9 @@ class RequisitionViewSet(viewsets.ModelViewSet):
         return queryset
 
     def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+        requisition = serializer.save(created_by=self.request.user)
+        log_audit(self.request.user, "REQUISITION_CREATED", "requisition", requisition.reference_code,
+                  title=requisition.title, status=requisition.status)
 
     def perform_update(self, serializer):
         current_status = serializer.instance.status
@@ -80,11 +83,19 @@ class RequisitionViewSet(viewsets.ModelViewSet):
             raise exceptions.ValidationError(
                 {"status": f"Cannot change a {current_status} requisition to {next_status}."}
             )
-        serializer.save()
+        changed = sorted(
+            key for key, value in serializer.validated_data.items()
+            if getattr(serializer.instance, key, None) != value
+        )
+        requisition = serializer.save()
+        if changed:
+            log_audit(self.request.user, "REQUISITION_UPDATED", "requisition", requisition.reference_code,
+                      changed_fields=changed, status_from=current_status, status_to=requisition.status)
 
     def perform_destroy(self, instance):
         if instance.status != RequisitionStatus.DRAFT:
             raise exceptions.ValidationError(
                 "Only draft requisitions can be deleted. Close an active requisition instead."
             )
+        log_audit(self.request.user, "REQUISITION_DELETED", "requisition", instance.reference_code, title=instance.title)
         instance.delete()

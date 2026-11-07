@@ -96,6 +96,7 @@ export interface Candidate {
   current_status: CandidateStatus
   identity_review_required: boolean
   closed_reason: string
+  personal_data_erased_at: string | null
   created_by: number
   created_by_name: string
   resume_documents: ResumeSummary[]

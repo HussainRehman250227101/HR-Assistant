@@ -27,10 +27,10 @@ class CandidateSerializer(serializers.ModelSerializer):
             "public_id", "requisition", "full_name", "display_name", "email", "phone",
             "location", "linkedin_url", "source", "contact_consent_status",
             "recording_consent_status", "consent_preferences", "current_status",
-            "identity_review_required", "closed_reason", "created_by", "created_by_name",
+            "identity_review_required", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name",
             "resume_documents", "created_at", "updated_at",
         )
-        read_only_fields = ("public_id", "display_name", "current_status", "identity_review_required", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
+        read_only_fields = ("public_id", "display_name", "current_status", "identity_review_required", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
 
     @staticmethod
     def get_created_by_name(obj):

@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useActivityLog, useEventTypes } from '../api/hooks'
-import { Card, Empty, ErrorAlert, Loading, PageHeader, Select, Table, Td } from '../components/ui'
+import { useActivityLog, useEventTypes, useSystemAudit } from '../api/hooks'
+import { useAuth } from '../auth/AuthContext'
+import { Card, Empty, ErrorAlert, Loading, PageHeader, Select, Table, Tabs, Td } from '../components/ui'
 import { formatDate, humanize } from '../lib/format'
 
 function details(d: Record<string, unknown>) {
@@ -11,8 +12,40 @@ function details(d: Record<string, unknown>) {
     .join(' · ')
 }
 
+function SystemChanges() {
+  const [page, setPage] = useState(1)
+  const audit = useSystemAudit({ page }, true)
+  return (
+    <Card>
+      <ErrorAlert error={audit.error} />
+      {audit.isLoading ? <Loading /> : !audit.data?.results.length ? <Empty>No system changes recorded.</Empty> : (
+        <Table head={['Time', 'Action', 'Entity', 'Actor', 'Details']}>
+          {audit.data.results.map((e) => (
+            <tr key={e.id}>
+              <Td className="text-xs whitespace-nowrap">{formatDate(e.created_at)}</Td>
+              <Td className="font-medium">{humanize(e.action)}</Td>
+              <Td className="text-xs">{e.entity_type === 'requisition' ? <Link className="text-indigo-700 hover:underline" to={`/requisitions/${e.entity_id}`}>requisition {e.entity_id.slice(0, 8)}</Link> : `${e.entity_type} ${e.entity_id.slice(0, 8)}`}</Td>
+              <Td>{e.actor_name}</Td>
+              <Td className="max-w-md text-xs text-slate-600">{details(e.details)}</Td>
+            </tr>
+          ))}
+        </Table>
+      )}
+      {audit.data && (audit.data.next || audit.data.previous) && (
+        <div className="mt-4 flex items-center justify-between text-sm">
+          <button disabled={!audit.data.previous} onClick={() => setPage((p) => p - 1)} className="text-indigo-700 disabled:text-slate-300">← Newer</button>
+          <span className="text-slate-500">Page {page}</span>
+          <button disabled={!audit.data.next} onClick={() => setPage((p) => p + 1)} className="text-indigo-700 disabled:text-slate-300">Older →</button>
+        </div>
+      )}
+    </Card>
+  )
+}
+
 /** Append-only audit trail across all visible candidates (FR-14, SRS §13). */
 export function ActivityLogPage() {
+  const { isRecruiter } = useAuth()
+  const [tab, setTab] = useState<'candidates' | 'system'>('candidates')
   const [eventType, setEventType] = useState('')
   const [page, setPage] = useState(1)
   const types = useEventTypes()
@@ -20,6 +53,8 @@ export function ActivityLogPage() {
   return (
     <>
       <PageHeader title="Audit log" subtitle="Every status change, human approval, call attempt, calendar check and email, newest first." />
+      {isRecruiter && <Tabs value={tab} onChange={setTab} tabs={[{ value: 'candidates', label: 'Candidate events' }, { value: 'system', label: 'Requisition & configuration changes' }]} />}
+      {tab === 'system' ? <SystemChanges /> : (
       <Card>
         <div className="mb-4 max-w-xs">
           <Select value={eventType} onChange={(e) => { setEventType(e.target.value); setPage(1) }}
@@ -47,6 +82,7 @@ export function ActivityLogPage() {
           </div>
         )}
       </Card>
+      )}
     </>
   )
 }

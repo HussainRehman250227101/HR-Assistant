@@ -239,3 +239,21 @@ export const useActivityLog = (params: Record<string, string | number | undefine
 
 export const useEventTypes = () =>
   useQuery({ queryKey: ['event-types'], queryFn: () => api<{ value: string; label: string }[]>('/dashboard/event-types/'), staleTime: Infinity })
+
+// ---- Hardening (Module 15) ----
+export const useCandidatePrivacyAction = (candidateId: string) =>
+  useApiMutation(({ action, reason }: { action: 'close' | 'erase-personal-data'; reason: string }) =>
+    api<Candidate>(`/candidates/${candidateId}/${action}/`, { body: { reason } }), LIFECYCLE)
+
+export interface SystemAuditEvent {
+  id: string
+  action: string
+  entity_type: string
+  entity_id: string
+  actor_name: string
+  details: Record<string, unknown>
+  created_at: string
+}
+
+export const useSystemAudit = (params: Record<string, string | number | undefined>, enabled: boolean) =>
+  useQuery({ queryKey: ['system-audit', params], queryFn: () => api<Paginated<SystemAuditEvent>>(`/audit/${qs(params)}`), enabled })

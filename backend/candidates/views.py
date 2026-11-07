@@ -15,10 +15,11 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import UserRole
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRAdmin, IsRecruiterOrAdmin
 from requisitions.models import Requisition, RequisitionStatus
 from .models import Candidate, CandidateEvent, CandidateStatus, ResumeDocument, ResumeProcessingStatus
 from .serializers import CandidateEventSerializer, CandidateSerializer, ResumeBatchUploadSerializer, ResumeDocumentDetailSerializer, ResumeDocumentSummarySerializer, ResumeUploadSerializer
+from .services.privacy import PrivacyError, close_candidate, erase_personal_data
 from .services.processing import process_resume_document, queue_resume_retry
 from .validators import calculate_sha256, safe_filename, validate_resume_upload
 
@@ -90,6 +91,8 @@ class CandidateViewSet(viewsets.ModelViewSet):
         CandidateEvent.objects.create(candidate=candidate,actor=self.request.user,event_type=CandidateEvent.EventType.CANDIDATE_CREATED,details={"requisition_reference":str(candidate.requisition.reference_code)})
 
     def perform_update(self,serializer):
+        if serializer.instance.personal_data_erased_at:
+            raise exceptions.ValidationError({"detail":"This candidate's personal data was erased; the record can no longer be edited."})
         changed=sorted(serializer.validated_data.keys())
         candidate=serializer.save()
         if changed:
@@ -181,6 +184,33 @@ class CandidateEventListView(APIView):
     def get(self,request,public_id):
         candidate=get_object_or_404(candidates_visible_to(request.user),public_id=public_id)
         return Response(CandidateEventSerializer(candidate.events.select_related("actor"),many=True).data)
+
+
+class CandidateCloseView(APIView):
+    permission_classes=[IsRecruiterOrAdmin]
+
+    def post(self,request,public_id):
+        candidate=get_object_or_404(Candidate,public_id=public_id)
+        try:
+            close_candidate(candidate,request.user,request.data.get("reason",""))
+        except PrivacyError as exc:
+            raise exceptions.ValidationError({"detail":str(exc)}) from exc
+        return Response(CandidateSerializer(candidate).data)
+
+
+class CandidateEraseView(APIView):
+    """HR administrators only: erase personal data of a closed candidate (deletion request / retention)."""
+
+    permission_classes=[IsHRAdmin]
+
+    def post(self,request,public_id):
+        candidate=get_object_or_404(Candidate,public_id=public_id)
+        try:
+            erase_personal_data(candidate,request.user,request.data.get("reason",""))
+        except PrivacyError as exc:
+            raise exceptions.ValidationError({"detail":str(exc)}) from exc
+        candidate.refresh_from_db()
+        return Response(CandidateSerializer(candidate).data)
 
 
 class ResumeDocumentDetailView(APIView):
