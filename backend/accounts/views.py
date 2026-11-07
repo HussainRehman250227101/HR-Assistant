@@ -3,6 +3,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenBlacklistView
 
+from .models import User, UserRole
+from .permissions import IsRecruiterOrAdmin
 from .serializers import UserProfileSerializer
 
 
@@ -13,6 +15,21 @@ class MeView(APIView):
 
     def get(self, request):
         return Response(UserProfileSerializer(request.user).data)
+
+
+class UserDirectoryView(APIView):
+    """Minimal staff directory (for hiring-manager / interviewer pickers). Recruiters and admins only."""
+
+    permission_classes = [IsRecruiterOrAdmin]
+
+    def get(self, request):
+        qs = User.objects.filter(is_active=True).order_by("first_name", "last_name", "username")
+        role = request.query_params.get("role")
+        if role:
+            if role not in UserRole.values:
+                return Response({"role": "Invalid role."}, status=status.HTTP_400_BAD_REQUEST)
+            qs = qs.filter(role=role)
+        return Response(UserProfileSerializer(qs, many=True).data)
 
 
 class LogoutView(TokenBlacklistView):

@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "scoring.apps.ScoringConfig",
     "reviews.apps.ReviewsConfig",
     "workflows.apps.WorkflowsConfig",
+    "screening.apps.ScreeningConfig",
 ]
 
 MIDDLEWARE = [
@@ -139,6 +140,27 @@ LANGGRAPH_CHECKPOINT_DB_PATH = Path(env(
 LANGGRAPH_STRICT_MSGPACK = env.bool("LANGGRAPH_STRICT_MSGPACK", default=True)
 if LANGGRAPH_STRICT_MSGPACK:
     os.environ["LANGGRAPH_STRICT_MSGPACK"] = "true"
+
+# Module 10: screening calls via ElevenLabs Conversational AI over its native Twilio integration.
+TELEPHONY_PROVIDER = env("TELEPHONY_PROVIDER", default="twilio") # type:ignore
+VOICE_AI_PROVIDER = env("VOICE_AI_PROVIDER", default="elevenlabs") # type:ignore
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="") # type:ignore
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="") # type:ignore
+TWILIO_PHONE_NUMBER = env("TWILIO_PHONE_NUMBER", default="") # type:ignore
+ELEVENLABS_API_BASE_URL = env("ELEVENLABS_API_BASE_URL", default="https://api.elevenlabs.io") # type:ignore
+ELEVENLABS_API_KEY = env("ELEVENLABS_API_KEY", default="") # type:ignore
+ELEVENLABS_AGENT_ID = env("ELEVENLABS_AGENT_ID", default="") # type:ignore
+ELEVENLABS_AGENT_PHONE_NUMBER_ID = env("ELEVENLABS_AGENT_PHONE_NUMBER_ID", default="") # type:ignore
+ELEVENLABS_WEBHOOK_SECRET = env("ELEVENLABS_WEBHOOK_SECRET", default="") # type:ignore
+VOICE_PROVIDER_TIMEOUT_SECONDS = env.int("VOICE_PROVIDER_TIMEOUT_SECONDS", default=15)
+SCREENING_ALLOWED_DIAL_PREFIXES = env.list("SCREENING_ALLOWED_DIAL_PREFIXES", default=["+92"]) # type:ignore
+SCREENING_MAX_CALL_ATTEMPTS = env.int("SCREENING_MAX_CALL_ATTEMPTS", default=3)
+SCREENING_RETRY_INTERVAL_MINUTES = env.int("SCREENING_RETRY_INTERVAL_MINUTES", default=120)
+SCREENING_CALL_TIMEZONE = env("SCREENING_CALL_TIMEZONE", default="Asia/Karachi") # type:ignore
+SCREENING_CALL_WINDOW_START_HOUR = env.int("SCREENING_CALL_WINDOW_START_HOUR", default=9)
+SCREENING_CALL_WINDOW_END_HOUR = env.int("SCREENING_CALL_WINDOW_END_HOUR", default=19)
+SCREENING_ORGANIZATION_NAME = env("SCREENING_ORGANIZATION_NAME", default="our company") # type:ignore
+SCREENING_HUMAN_CONTACT = env("SCREENING_HUMAN_CONTACT", default="the recruiting team by email") # type:ignore
 
 # Private resume upload limits and Django multipart request limits.
 RESUME_MAX_FILE_SIZE_MB = env.int("RESUME_MAX_FILE_SIZE_MB", default=10)

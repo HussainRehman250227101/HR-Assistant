@@ -328,3 +328,67 @@ Use ModHeader to attach your recruiter JWT to the local DRF pages.
 6. Inspect workflow state: `GET /api/v1/workflows/<workflow_run_uuid>/`. After a saved recruiter decision, the workflow should be `COMPLETED`. A failed resume after an already-saved decision can be retried using `POST /api/v1/workflows/<workflow_run_uuid>/resume/`.
 
 Do not merge the feature branch until local migrations and the full test suite pass.
+
+
+## Frontend — React HR workspace
+
+`frontend/` is a React 19 + TypeScript + Vite app styled with Tailwind CSS v4, using TanStack Query for API state and React Router for navigation. It replaces the DRF Browsable API for day-to-day recruiting work.
+
+```powershell
+# terminal 1 (backend/)
+python manage.py runserver
+# terminal 2 (frontend/)
+npm install
+npm run dev            # http://localhost:5173 ; /api is proxied to http://127.0.0.1:8000
+npm run build          # type-check + production build
+npm run lint
+```
+
+Sign in with a Django user (`python manage.py createsuperuser`, then set `role` in the admin). JWTs are kept in `localStorage` (prototype trade-off; move to httpOnly cookies before production). Set `VITE_API_PROXY_TARGET` to proxy to a different backend.
+
+Screens: requisitions (create/edit/open/hold/close, rubric weights, batch resume upload), candidates (details, consent, resumes, extraction, scoring, shortlist decision, screening, activity history), shortlist queue, screening queue and integration status.
+
+## Module 10 — Candidate Screening Call Agent (Twilio + ElevenLabs)
+
+ElevenLabs Conversational AI places outbound calls through its **native Twilio integration** (`POST /v1/convai/twilio/outbound-call`) using the Twilio number imported into ElevenLabs. Twilio's REST API is queried for the authoritative call status (no-answer, busy, failed). Post-call results arrive by an HMAC-signed ElevenLabs webhook, with polling as a fallback. Azure GPT-5 mini turns the transcript into the SRS §8 output fields. Every quoted candidate statement is verified against the transcript, and unverifiable quotes are downgraded to `UNCLEAR`.
+
+Safeguards:
+- Only candidates in `APPROVED_FOR_SCREENING` can be screened.
+- The agent uses only the requisition's approved questions and the versioned script `screening-call-v1`.
+- Destinations are limited to `SCREENING_ALLOWED_DIAL_PREFIXES` (default `+92`, validated as `+92` plus 10 digits).
+- Calls are allowed only inside a calling window (09:00–19:00 Asia/Karachi by default).
+- At most `SCREENING_MAX_CALL_ATTEMPTS` attempts are made, with a minimum `SCREENING_RETRY_INTERVAL_MINUTES` between them.
+- An atomic claim ensures only one call can be in flight per screening, and each candidate has at most one active screening.
+- Candidates who opted out or declined consent are blocked from automated calls.
+- If consent is declined during a call, the transcript is discarded and the ElevenLabs conversation is deleted.
+- If the candidate asks to stop, an automated-call opt-out is recorded.
+- Every attempt is logged in `ScreeningCallAttempt` and as a candidate event.
+- A human-led screening route exists for candidates who decline automated calls or need assistance.
+
+The agent never rejects a candidate; results go to `SCREENING_COMPLETED_HR_REVIEW`.
+
+Endpoints (`/api/v1/screening/`):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `` | Active screening queue (`?status=`, `?requisition=`) |
+| GET/POST | `candidates/<candidate_uuid>/` | List / create (`channel` = `AI_VOICE` or `HUMAN_LED`, `start_call_now`) |
+| GET | `<screening_uuid>/` | Detail (transcripts hidden from hiring managers) |
+| POST | `<screening_uuid>/call/` | Place the next safeguarded call attempt |
+| POST | `<screening_uuid>/sync/` | Fetch provider status / conclude a finished call |
+| POST | `<screening_uuid>/retry-analysis/` | Re-run transcript analysis without calling again |
+| POST | `<screening_uuid>/manual-result/` | Record a human-led screening result |
+| POST | `<screening_uuid>/cancel/` | Cancel a pending screening (`reason`) |
+| GET | `agent-config/` | Integration status (booleans only) and, for admins, the agent prompt to paste into ElevenLabs |
+| POST | `webhooks/elevenlabs/` | ElevenLabs post-call webhook (`ElevenLabs-Signature` HMAC) |
+
+Configure `ELEVENLABS_API_KEY`, `ELEVENLABS_AGENT_ID`, `ELEVENLABS_AGENT_PHONE_NUMBER_ID`, `ELEVENLABS_WEBHOOK_SECRET`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_PHONE_NUMBER` in `backend/.env`.
+
+ElevenLabs agent setup:
+1. Paste the first message and system prompt from **Integrations** (or the `agent-config/` endpoint) into the agent.
+2. Enable dynamic variables.
+3. Point the post-call webhook to `https://<public-host>/api/v1/screening/webhooks/elevenlabs/`.
+
+Without a public webhook, run `python manage.py sync_screening_calls` periodically. The UI also polls while a call is live.
+
+Live Twilio/ElevenLabs calls are **not** covered by automated tests; the tests use fake provider clients.

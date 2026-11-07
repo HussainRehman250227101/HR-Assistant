@@ -25,6 +25,8 @@ class RecruitmentWorkflowState(TypedDict, total=False):
     recommendation: str
     review_request: dict[str, Any]
     review_response: dict[str, Any]
+    review_id: str
+    decision: str
     workflow_result: str
 
 

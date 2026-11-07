@@ -129,6 +129,15 @@ class CandidateEvent(models.Model):
         WORKFLOW_STARTED = "WORKFLOW_STARTED", "Workflow Started"
         WORKFLOW_COMPLETED = "WORKFLOW_COMPLETED", "Workflow Completed"
         WORKFLOW_FAILED = "WORKFLOW_FAILED", "Workflow Failed"
+        SCREENING_CREATED = "SCREENING_CREATED", "Screening Created"
+        SCREENING_CALL_STARTED = "SCREENING_CALL_STARTED", "Screening Call Started"
+        SCREENING_CALL_FAILED = "SCREENING_CALL_FAILED", "Screening Call Failed To Start"
+        SCREENING_CALL_ENDED = "SCREENING_CALL_ENDED", "Screening Call Ended"
+        SCREENING_ANALYSIS_FAILED = "SCREENING_ANALYSIS_FAILED", "Screening Analysis Failed"
+        SCREENING_RESULT_RECORDED = "SCREENING_RESULT_RECORDED", "Screening Result Recorded"
+        SCREENING_ESCALATED = "SCREENING_ESCALATED", "Screening Escalated To HR"
+        SCREENING_CANCELLED = "SCREENING_CANCELLED", "Screening Cancelled"
+        CONSENT_UPDATED = "CONSENT_UPDATED", "Consent Updated"
 
     candidate = models.ForeignKey(Candidate, on_delete=models.CASCADE, related_name="events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="candidate_events")
