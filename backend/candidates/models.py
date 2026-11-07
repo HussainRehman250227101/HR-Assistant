@@ -138,6 +138,7 @@ class CandidateEvent(models.Model):
         SCREENING_ESCALATED = "SCREENING_ESCALATED", "Screening Escalated To HR"
         SCREENING_CANCELLED = "SCREENING_CANCELLED", "Screening Cancelled"
         CONSENT_UPDATED = "CONSENT_UPDATED", "Consent Updated"
+        SCREENING_DECISION_RECORDED = "SCREENING_DECISION_RECORDED", "Screening Decision Recorded"
 
     candidate = models.ForeignKey(Candidate, on_delete=models.CASCADE, related_name="events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="candidate_events")

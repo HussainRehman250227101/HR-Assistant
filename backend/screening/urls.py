@@ -3,7 +3,7 @@ from django.urls import path
 from .views import (
     CandidateScreeningListView, ElevenLabsWebhookView, ScreeningAgentConfigView, ScreeningCancelView,
     ScreeningDetailView, ScreeningManualResultView, ScreeningPlaceCallView, ScreeningQueueView,
-    ScreeningRetryAnalysisView, ScreeningSyncView,
+    ScreeningRetryAnalysisView, ScreeningReviewView, ScreeningSyncView,
 )
 
 app_name = "screening"
@@ -18,4 +18,5 @@ urlpatterns = [
     path("<uuid:public_id>/retry-analysis/", ScreeningRetryAnalysisView.as_view(), name="retry-analysis"),
     path("<uuid:public_id>/manual-result/", ScreeningManualResultView.as_view(), name="manual-result"),
     path("<uuid:public_id>/cancel/", ScreeningCancelView.as_view(), name="cancel"),
+    path("<uuid:public_id>/review/", ScreeningReviewView.as_view(), name="review"),
 ]

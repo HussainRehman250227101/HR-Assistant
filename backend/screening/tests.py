@@ -278,3 +278,59 @@ class ScreeningAPITests(ScreeningFixture, APITestCase):
         response = self.client.post(reverse("screening:elevenlabs-webhook"), body, content_type="application/json",
                                     HTTP_ELEVENLABS_SIGNATURE=f"t={ts},v0={sig}")
         self.assertEqual(response.status_code, 200)
+
+
+@override_settings(**ALWAYS_OPEN)
+class ScreeningReviewTests(ScreeningFixture, APITestCase):
+    def setUp(self):
+        self.make_fixture()
+        self.client.force_authenticate(self.recruiter)
+
+    def _completed_screening(self):
+        screening = calls.create_screening(self.candidate, self.recruiter, "HUMAN_LED")
+        return calls.record_manual_result(screening, self.recruiter, {
+            "call_status": "COMPLETED", "consent_status": "GRANTED", "concise_summary": "ok",
+            "question_answer_pairs": [{"question_number": 1, "answer_status": "ANSWERED", "candidate_statement": "5 years"}],
+        })
+
+    def test_approve_moves_candidate_to_interview_stage_once(self):
+        screening = self._completed_screening()
+        url = reverse("screening:review", args=[screening.public_id])
+        self.client.force_authenticate(self.manager)
+        self.assertEqual(self.client.post(url, {"decision": "APPROVE_FOR_INTERVIEW"}, format="json").status_code, 403)
+        self.client.force_authenticate(self.recruiter)
+        response = self.client.post(url, {"decision": "APPROVE_FOR_INTERVIEW"}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertEqual(response.data["status"], "REVIEWED")
+        self.assertEqual(response.data["review"]["decision"], "APPROVE_FOR_INTERVIEW")
+        self.candidate.refresh_from_db()
+        self.assertEqual(self.candidate.current_status, CandidateStatus.APPROVED_FOR_INTERVIEW)
+        self.assertEqual(self.client.post(url, {"decision": "DECLINE", "decision_reason": "x"}, format="json").status_code, 400)
+
+    def test_decline_requires_reason_and_closes(self):
+        screening = self._completed_screening()
+        url = reverse("screening:review", args=[screening.public_id])
+        self.assertEqual(self.client.post(url, {"decision": "DECLINE"}, format="json").status_code, 400)
+        self.assertEqual(self.client.post(url, {"decision": "DECLINE", "decision_reason": "Notice period too long"}, format="json").status_code, 201)
+        self.candidate.refresh_from_db()
+        self.assertEqual(self.candidate.current_status, CandidateStatus.CLOSED)
+        self.assertEqual(self.candidate.closed_reason, "Notice period too long")
+
+    def test_rescreen_creates_follow_up_screening(self):
+        screening = self._completed_screening()
+        response = self.client.post(reverse("screening:review", args=[screening.public_id]),
+                                    {"decision": "RESCREEN_HUMAN_LED", "decision_reason": "Answers unclear"}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        self.assertIsNotNone(response.data["review"]["follow_up_screening"])
+        self.candidate.refresh_from_db()
+        self.assertEqual(self.candidate.current_status, CandidateStatus.SCREENING_SCHEDULED_PENDING)
+
+    def test_rescreen_ai_blocked_after_opt_out(self):
+        screening = self._completed_screening()
+        self.candidate.consent_preferences = {"automated_call_opt_out": True}
+        self.candidate.save()
+        response = self.client.post(reverse("screening:review", args=[screening.public_id]),
+                                    {"decision": "RESCREEN_AI_CALL", "decision_reason": "retry"}, format="json")
+        self.assertEqual(response.status_code, 400)
+        screening.refresh_from_db()
+        self.assertEqual(screening.status, ScreeningStatus.AWAITING_HR_REVIEW)

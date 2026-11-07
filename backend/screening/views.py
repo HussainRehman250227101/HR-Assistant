@@ -15,7 +15,10 @@ from accounts.permissions import IsHRAdmin, IsRecruiterOrAdmin
 from candidates.views import candidates_visible_to
 from . import script
 from .models import ACTIVE_SCREENING_STATUSES, CallAttemptStatus, Screening, ScreeningCallAttempt, ScreeningStatus
-from .serializers import ManualResultSerializer, ReasonSerializer, ScreeningCreateSerializer, ScreeningSerializer
+from .serializers import (
+    ManualResultSerializer, ReasonSerializer, ScreeningCreateSerializer, ScreeningReviewRequestSerializer, ScreeningSerializer,
+)
+from .services.review import review_screening
 from .services.calls import (
     ScreeningError, cancel_screening, create_screening, place_call, record_manual_result,
     retry_analysis, sync_screening, sync_attempt,
@@ -165,6 +168,24 @@ class ScreeningCancelView(_ScreeningAction):
         except ScreeningError as exc:
             raise exceptions.ValidationError({"detail": str(exc)}) from exc
         return Response(serialize(screening, request.user))
+
+
+class ScreeningReviewView(_ScreeningAction):
+    """HR decision on a completed screening. Only a human can progress, re-screen or decline."""
+
+    serializer_class = ScreeningReviewRequestSerializer
+
+    def post(self, request, public_id):
+        screening = self.get_screening(public_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            review_screening(screening, request.user, serializer.validated_data["decision"],
+                             serializer.validated_data.get("decision_reason", ""))
+        except ScreeningError as exc:
+            raise exceptions.ValidationError({"detail": str(exc)}) from exc
+        screening.refresh_from_db()
+        return Response(serialize(screening, request.user), status=status.HTTP_201_CREATED)
 
 
 class ScreeningAgentConfigView(APIView):

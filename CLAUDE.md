@@ -103,7 +103,7 @@ Status as verified on 2026-11-07 (Module 10 branch). **Update this table when a 
 | FR-05 | Contact only recruiter-approved candidates via approved template/channel | Done (M10) | `screening/services/calls.py` (`APPROVED_FOR_SCREENING` only, versioned `script.py`, +92 only) |
 | FR-06 | Screening call: structured questions, no-answer/retry/escalation, AI/recording disclosure | Done (M10; live call unverified) | `calls.py` attempt limits/interval/window, opt-out, human-led route; disclosure + consent in `script.py` |
 | FR-07 | Factual screening summary; candidate statements vs. agent interpretation | Done (M10) | `screening/services/analysis.py` (quotes verified against transcript) |
-| FR-08 | HR reviews screening and explicitly approves next stage | Not started | — |
+| FR-08 | HR reviews screening and explicitly approves next stage | Done (M11) | `screening/services/review.py`, append-only `ScreeningReview`; UI `ScreeningReviewForm` |
 | FR-09 | Candidate + interviewer availability, time zones, duration | Not started | — |
 | FR-10 | Invitation draft with all required fields | Not started | — |
 | FR-11 | Human confirmation before sending invitation | Not started | — |
@@ -219,7 +219,8 @@ Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/
 - **Delivery model:** about 15 numbered modules (the README says 15; only Modules 01–10 are defined in the repo).
   - 01 foundation, 02 auth/RBAC, 03 requisitions, 04 candidate intake, 05 resume processing, 06 LLM infrastructure, 07 scoring, 08 recruiter review, 09 LangGraph workflow: all **done and merged**.
   - 10 screening call agent (Twilio + ElevenLabs) + React frontend foundation: done on `feature/module-10-screening-call-agent`.
-  - Remaining modules, as named by the user on 2026-11-07: 11 Screening Review, 12 Scheduling & Calendar Agent, 13 Email Invitation Agent, 14 Dashboard & Candidate Lifecycle Tracking, 15 Production Hardening & QA.
+  - 11 Screening Review: done on `feature/module-11-screening-review` (branched from the Module 10 branch).
+  - Remaining modules, as named by the user on 2026-11-07: 12 Scheduling & Calendar Agent, 13 Email Invitation Agent, 14 Dashboard & Candidate Lifecycle Tracking, 15 Production Hardening & QA.
   - Every module ships both backend and frontend UI (see "Development Workflow — Mandatory" below). Branches are not merged into `main` automatically.
 - **Branch convention:** `feature/module-NN-<slug>` or `feature/modules-NN-NN-NN-<slug>` off `main`, merged with a merge commit.
 - **Definition of done for a module:**

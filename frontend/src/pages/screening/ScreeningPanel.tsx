@@ -5,6 +5,7 @@ import { formatDate, humanize } from '../../lib/format'
 import type { Candidate, Screening } from '../../lib/types'
 import { ManualResultForm } from './ManualResultForm'
 import { ScreeningResult } from './ScreeningResult'
+import { ScreeningReviewForm } from './ScreeningReviewForm'
 
 const ACTIVE = ['PENDING_CALL', 'CALL_IN_PROGRESS', 'ANALYZING', 'ANALYSIS_FAILED', 'AWAITING_MANUAL_RESULT', 'AWAITING_HR_REVIEW']
 
@@ -69,7 +70,12 @@ export function ActiveScreening({ screening, canEdit }: { screening: Screening; 
         {screening.status === 'ANALYZING' && <Alert tone="info">The call ended. Summarising the transcript…</Alert>}
         <AttemptsTable screening={screening} />
         {screening.status === 'AWAITING_MANUAL_RESULT' && canEdit && <ManualResultForm screening={screening} />}
-        {screening.status === 'AWAITING_HR_REVIEW' && <ScreeningResult screening={screening} />}
+        {screening.status === 'AWAITING_HR_REVIEW' && (
+          <>
+            <ScreeningResult screening={screening} />
+            {canEdit && <ScreeningReviewForm screening={screening} />}
+          </>
+        )}
       </div>
       <Modal open={cancelOpen} title="Cancel screening" onClose={() => setCancelOpen(false)}>
         <div className="space-y-3">

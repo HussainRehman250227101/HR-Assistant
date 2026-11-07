@@ -1,6 +1,8 @@
 from rest_framework import serializers
 
-from .models import CallOutcome, Screening, ScreeningCallAttempt, ScreeningChannel, ScreeningConsent
+from .models import (
+    CallOutcome, Screening, ScreeningCallAttempt, ScreeningChannel, ScreeningConsent, ScreeningDecision, ScreeningReview,
+)
 
 
 class ScreeningCallAttemptSerializer(serializers.ModelSerializer):
@@ -21,7 +23,28 @@ class ScreeningCallAttemptSerializer(serializers.ModelSerializer):
         return obj.initiated_by.get_full_name() or obj.initiated_by.username
 
 
+class ScreeningReviewSerializer(serializers.ModelSerializer):
+    decided_by_name = serializers.SerializerMethodField()
+    follow_up_screening = serializers.UUIDField(source="follow_up_screening.public_id", read_only=True, default=None)
+
+    class Meta:
+        model = ScreeningReview
+        fields = ("public_id", "decision", "decision_reason", "previous_candidate_status", "resulting_candidate_status",
+                  "follow_up_screening", "decided_by_name", "created_at")
+        read_only_fields = fields
+
+    @staticmethod
+    def get_decided_by_name(obj):
+        return obj.decided_by.get_full_name() or obj.decided_by.username
+
+
+class ScreeningReviewRequestSerializer(serializers.Serializer):
+    decision = serializers.ChoiceField(choices=ScreeningDecision.choices)
+    decision_reason = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+
+
 class ScreeningSerializer(serializers.ModelSerializer):
+    review = serializers.SerializerMethodField()
     candidate_reference = serializers.UUIDField(source="candidate.public_id", read_only=True)
     candidate_name = serializers.CharField(source="candidate.full_name", read_only=True)
     requisition_reference = serializers.UUIDField(source="requisition.reference_code", read_only=True)
@@ -41,9 +64,14 @@ class ScreeningSerializer(serializers.ModelSerializer):
             "recommended_next_step_for_human_review", "call_timestamp", "transcript", "analysis_warnings",
             "analysis_provider", "analysis_model_version", "analysis_prompt_version",
             "error_code", "error_message", "created_by_name", "result_recorded_by_name", "result_recorded_at",
-            "call_attempts", "created_at", "updated_at",
+            "call_attempts", "review", "created_at", "updated_at",
         )
         read_only_fields = fields
+
+    @staticmethod
+    def get_review(obj):
+        review = ScreeningReview.objects.filter(screening=obj).select_related("decided_by", "follow_up_screening").first()
+        return ScreeningReviewSerializer(review).data if review else None
 
     @staticmethod
     def get_created_by_name(obj):

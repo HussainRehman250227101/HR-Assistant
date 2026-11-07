@@ -392,3 +392,27 @@ ElevenLabs agent setup:
 Without a public webhook, run `python manage.py sync_screening_calls` periodically. The UI also polls while a call is live.
 
 Live Twilio/ElevenLabs calls are **not** covered by automated tests; the tests use fake provider clients.
+
+
+## Module 11 — Screening Review (human gate 2)
+
+`POST /api/v1/screening/<screening_uuid>/review/` (recruiter/admin) records an append-only `ScreeningReview` for a screening in `AWAITING_HR_REVIEW`.
+
+Request body: `{ "decision": ..., "decision_reason": "..." }`. The decisions are:
+
+| Decision | Effect |
+|---|---|
+| `APPROVE_FOR_INTERVIEW` | Candidate moves to `APPROVED_FOR_INTERVIEW` |
+| `RESCREEN_AI_CALL` | Creates a new screening; blocked if the candidate opted out |
+| `RESCREEN_HUMAN_LED` | Creates a new screening |
+| `DECLINE` | Candidate moves to `CLOSED`, with the reason stored |
+
+Rules:
+- A reason is required for every decision except approving a call that completed normally.
+- The screening becomes `REVIEWED` and is returned with its `review`.
+- Each screening can be decided only once, and only while the candidate is in `SCREENING_COMPLETED_HR_REVIEW`.
+- The AI's `recommended_next_step_for_human_review` is advisory only.
+
+UI:
+- **Screening** (queue, filtered to results awaiting review by default) → **Review**.
+- Or open the candidate's **Screening** tab. The result view shows the candidate's statements separately from the AI interpretation, unresolved questions, warnings and the transcript (recruiters only).

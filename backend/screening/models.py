@@ -119,6 +119,36 @@ class Screening(models.Model):
         return f"{self.candidate} - {self.get_channel_display()} ({self.status})"
 
 
+class ScreeningDecision(models.TextChoices):
+    APPROVE_FOR_INTERVIEW = "APPROVE_FOR_INTERVIEW", "Approve for interview"
+    RESCREEN_AI_CALL = "RESCREEN_AI_CALL", "Re-screen with a new AI call"
+    RESCREEN_HUMAN_LED = "RESCREEN_HUMAN_LED", "Re-screen with a human-led screening"
+    DECLINE = "DECLINE", "Decline (close candidate)"
+
+
+class ScreeningReview(models.Model):
+    """Append-only HR decision on a screening result (FR-08, human gate 2)."""
+
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    screening = models.OneToOneField(Screening, on_delete=models.PROTECT, related_name="review")
+    candidate = models.ForeignKey("candidates.Candidate", on_delete=models.PROTECT, related_name="screening_reviews")
+    decision = models.CharField(max_length=24, choices=ScreeningDecision.choices)
+    decision_reason = models.TextField(blank=True)
+    previous_candidate_status = models.CharField(max_length=40)
+    resulting_candidate_status = models.CharField(max_length=40)
+    follow_up_screening = models.ForeignKey(
+        Screening, on_delete=models.PROTECT, null=True, blank=True, related_name="created_by_review"
+    )
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="screening_reviews_decided")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+    def __str__(self):
+        return f"{self.candidate} - {self.get_decision_display()}"
+
+
 class CallAttemptStatus(models.TextChoices):
     INITIATING = "INITIATING", "Initiating"
     IN_PROGRESS = "IN_PROGRESS", "In progress"
