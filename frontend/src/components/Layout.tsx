@@ -7,6 +7,7 @@ const NAV = [
   { to: '/candidates', label: 'Candidates' },
   { to: '/shortlist', label: 'Shortlist Review', recruiter: true },
   { to: '/screening', label: 'Screening', recruiter: true },
+  { to: '/interviews', label: 'Interviews & Availability' },
   { to: '/settings', label: 'Integrations', recruiter: true },
 ]
 

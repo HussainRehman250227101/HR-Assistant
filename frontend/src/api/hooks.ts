@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, qs } from '../lib/api'
 import type {
-  Candidate, CandidateEvent, Evaluation, Paginated, Requisition, Rubric, Screening,
+  AvailabilitySlot, Candidate, CandidateEvent, Evaluation, Interview, LocalWindow, Paginated, Requisition, Rubric, Screening,
   ShortlistQueueItem, ShortlistReview, User, WorkflowRun,
 } from '../lib/types'
 
@@ -148,3 +148,38 @@ export const useAgentConfig = () => useQuery({ queryKey: ['agent-config'], query
 
 export const useLLMStatus = (enabled: boolean) =>
   useQuery({ queryKey: ['llm-status'], queryFn: () => api<Record<string, unknown>>('/ai/status/'), enabled })
+
+// ---- Scheduling (Module 12) ----
+export const useAvailability = (interviewer?: number) =>
+  useQuery({ queryKey: [...keys.interviews, 'availability', interviewer], queryFn: () => api<AvailabilitySlot[]>(`/scheduling/availability/${qs({ interviewer })}`) })
+
+export const useAddAvailability = () =>
+  useApiMutation((data: LocalWindow & { timezone: string; interviewer?: number }) =>
+    api<AvailabilitySlot>('/scheduling/availability/', { body: data }), [keys.interviews])
+
+export const useDeleteAvailability = () =>
+  useApiMutation((id: string) => api(`/scheduling/availability/${id}/`, { method: 'DELETE' }), [keys.interviews])
+
+export const useInterviews = (params: Record<string, string | undefined>) =>
+  useQuery({ queryKey: [...keys.interviews, 'list', params], queryFn: () => api<Interview[]>(`/scheduling/interviews/${qs(params)}`) })
+
+export const useCandidateInterviews = (candidateId: string) =>
+  useQuery({ queryKey: [...keys.interviews, 'candidate', candidateId], queryFn: () => api<Interview[]>(`/scheduling/candidates/${candidateId}/interviews/`) })
+
+export interface InterviewPlanInput {
+  interviewer?: number
+  duration_minutes?: number
+  timezone?: string
+  mode?: string
+  meeting_link?: string
+  location?: string
+  candidate_availability_note?: string
+  candidate_windows?: LocalWindow[]
+}
+
+export const usePlanInterview = (candidateId: string) =>
+  useApiMutation((data: InterviewPlanInput) => api<Interview>(`/scheduling/candidates/${candidateId}/interviews/`, { body: data }), LIFECYCLE)
+
+export const useInterviewAction = () =>
+  useApiMutation(({ id, action, body }: { id: string; action: string; body?: unknown }) =>
+    api<Interview>(`/scheduling/interviews/${id}/${action}/`, { method: 'POST', body: body ?? {} }), LIFECYCLE)

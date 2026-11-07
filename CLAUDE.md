@@ -59,6 +59,8 @@ Each app is mounted under `/api/v1/<prefix>/` in `config/urls.py`. Business logi
 | `workflows` (`workflows/`) | LangGraph graph + `WorkflowRun` records; pause/resume at HR gate | `graph.py`, `services.py` |
 | `screening` (`screening/`) | Agent 2: `Screening` (SRS Screening entity) + append-only `ScreeningCallAttempt`; AI-voice or human-led channel; safeguarded calls, sync/webhook, transcript analysis | `services/calls.py` (state machine + safeguards), `services/voice.py`, `services/analysis.py`, `services/phone.py`, `script.py` (approved agent prompt), `management/commands/sync_screening_calls.py` |
 
+| `scheduling` (`scheduling/`) | Agent 3 part 1: `AvailabilitySlot` (internal calendar, UTC + entry tz) and `Interview` (SRS Interview entity; one active per candidate); slot engine; confirm both parties | `services/slots.py`, `services/interviews.py` |
+
 Shared helper: `candidates/services/status.py` → `change_candidate_status()` / `record_event()`; use it for every new status change.
 
 ### Frontend (`frontend/src/`)
@@ -104,7 +106,7 @@ Status as verified on 2026-11-07 (Module 10 branch). **Update this table when a 
 | FR-06 | Screening call: structured questions, no-answer/retry/escalation, AI/recording disclosure | Done (M10; live call unverified) | `calls.py` attempt limits/interval/window, opt-out, human-led route; disclosure + consent in `script.py` |
 | FR-07 | Factual screening summary; candidate statements vs. agent interpretation | Done (M10) | `screening/services/analysis.py` (quotes verified against transcript) |
 | FR-08 | HR reviews screening and explicitly approves next stage | Done (M11) | `screening/services/review.py`, append-only `ScreeningReview`; UI `ScreeningReviewForm` |
-| FR-09 | Candidate + interviewer availability, time zones, duration | Not started | — |
+| FR-09 | Candidate + interviewer availability, time zones, duration | Done (M12) | `scheduling/services/slots.py` (internal availability calendar, clearly labelled; no Google/MS integration), `services/interviews.py` |
 | FR-10 | Invitation draft with all required fields | Not started | — |
 | FR-11 | Human confirmation before sending invitation | Not started | — |
 | FR-12 | Status + event history from resume received → interview scheduled | Partial | All 10 SRS §9 statuses exist in `CandidateStatus`; transitions implemented only up to `APPROVED_FOR_SCREENING`/`CLOSED`; history in `CandidateEvent` |
@@ -220,7 +222,8 @@ Frontend (from `frontend/`): `npm install`, `npm run dev` (port 5173, proxies `/
   - 01 foundation, 02 auth/RBAC, 03 requisitions, 04 candidate intake, 05 resume processing, 06 LLM infrastructure, 07 scoring, 08 recruiter review, 09 LangGraph workflow: all **done and merged**.
   - 10 screening call agent (Twilio + ElevenLabs) + React frontend foundation: done on `feature/module-10-screening-call-agent`.
   - 11 Screening Review: done on `feature/module-11-screening-review` (branched from the Module 10 branch).
-  - Remaining modules, as named by the user on 2026-11-07: 12 Scheduling & Calendar Agent, 13 Email Invitation Agent, 14 Dashboard & Candidate Lifecycle Tracking, 15 Production Hardening & QA.
+  - 12 Scheduling & Calendar Agent: done on `feature/module-12-scheduling-calendar`.
+  - Remaining modules, as named by the user on 2026-11-07: 13 Email Invitation Agent, 14 Dashboard & Candidate Lifecycle Tracking, 15 Production Hardening & QA.
   - Every module ships both backend and frontend UI (see "Development Workflow — Mandatory" below). Branches are not merged into `main` automatically.
 - **Branch convention:** `feature/module-NN-<slug>` or `feature/modules-NN-NN-NN-<slug>` off `main`, merged with a merge commit.
 - **Definition of done for a module:**

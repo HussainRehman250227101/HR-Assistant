@@ -4,6 +4,7 @@ import { Layout } from './components/Layout'
 import { Loading } from './components/ui'
 import { CandidateDetailPage } from './pages/candidates/CandidateDetailPage'
 import { CandidatesPage } from './pages/candidates/CandidatesPage'
+import { InterviewsPage } from './pages/interviews/InterviewsPage'
 import { LoginPage } from './pages/LoginPage'
 import { RequisitionDetailPage } from './pages/requisitions/RequisitionDetailPage'
 import { RequisitionFormPage } from './pages/requisitions/RequisitionFormPage'
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="candidates/:id" element={<CandidateDetailPage />} />
         <Route path="shortlist" element={<ShortlistQueuePage />} />
         <Route path="screening" element={<ScreeningQueuePage />} />
+        <Route path="interviews" element={<InterviewsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

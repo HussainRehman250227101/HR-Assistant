@@ -26,6 +26,24 @@ export function formatDate(value: string | null | undefined, withTime = true): s
     : date.toLocaleDateString(undefined, { dateStyle: 'medium' })
 }
 
+/** Format an instant in a specific IANA time zone, labelled with that zone. */
+export function formatInZone(value: string | null | undefined, timeZone: string, withZone = true): string {
+  if (!value) return '—'
+  try {
+    const text = new Date(value).toLocaleString(undefined, { timeZone, weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    return withZone ? `${text} (${timeZone})` : text
+  } catch {
+    return formatDate(value)
+  }
+}
+
+export const BROWSER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone
+
+export const COMMON_TIMEZONES = Array.from(new Set([
+  'Asia/Karachi', BROWSER_TZ, 'UTC', 'Asia/Dubai', 'Asia/Riyadh', 'Europe/London', 'Europe/Berlin',
+  'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Asia/Singapore', 'Australia/Sydney',
+]))
+
 export function formatBytes(size: number): string {
   if (size < 1024) return `${size} B`
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`

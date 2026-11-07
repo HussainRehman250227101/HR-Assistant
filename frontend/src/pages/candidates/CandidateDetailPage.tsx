@@ -4,13 +4,14 @@ import { useCandidate, useRequisitions } from '../../api/hooks'
 import { useAuth } from '../../auth/AuthContext'
 import { Alert, Badge, Button, Card, ErrorAlert, KeyValue, Loading, PageHeader, Tabs } from '../../components/ui'
 import { CANDIDATE_STATUS_ORDER, formatDate, humanize } from '../../lib/format'
+import { InterviewPanel } from '../interviews/InterviewPanel'
 import { ScreeningPanel } from '../screening/ScreeningPanel'
 import { ActivityPanel } from './ActivityPanel'
 import { CandidateFormModal } from './CandidateFormModal'
 import { ResumesPanel } from './ResumesPanel'
 import { ScoringPanel } from './ScoringPanel'
 
-type Tab = 'overview' | 'scoring' | 'screening' | 'activity'
+type Tab = 'overview' | 'scoring' | 'screening' | 'interview' | 'activity'
 
 function Stepper({ status }: { status: string }) {
   const steps = CANDIDATE_STATUS_ORDER.filter((s) => s !== 'CLOSED' && s !== 'NEEDS_MANUAL_REVIEW')
@@ -55,6 +56,7 @@ export function CandidateDetailPage() {
           { value: 'overview', label: 'Overview & resumes' },
           { value: 'scoring', label: 'Scoring & shortlist' },
           { value: 'screening', label: 'Screening' },
+          { value: 'interview', label: 'Interview' },
           { value: 'activity', label: 'Activity' },
         ]}
       />
@@ -74,6 +76,7 @@ export function CandidateDetailPage() {
       )}
       {tab === 'scoring' && <ScoringPanel candidate={c} canEdit={isRecruiter} />}
       {tab === 'screening' && <ScreeningPanel candidate={c} canEdit={isRecruiter} />}
+      {tab === 'interview' && <InterviewPanel candidate={c} canEdit={isRecruiter} />}
       {tab === 'activity' && <ActivityPanel candidateId={c.public_id} />}
       <CandidateFormModal open={editOpen} onClose={() => setEditOpen(false)} candidate={c} />
     </>

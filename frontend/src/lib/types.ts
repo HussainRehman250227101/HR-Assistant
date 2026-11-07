@@ -284,3 +284,56 @@ export interface ScreeningReview {
   decided_by_name: string
   created_at: string
 }
+
+export interface AvailabilitySlot {
+  public_id: string
+  interviewer: number
+  interviewer_name: string
+  start: string
+  end: string
+  timezone: string
+  source: string
+  source_label: string
+}
+
+export interface Slot {
+  start: string
+  end: string
+}
+
+export type InterviewStatus = 'PROPOSED' | 'NEEDS_HR_COORDINATION' | 'SLOT_CONFIRMED' | 'SCHEDULED' | 'CANCELLED'
+
+export interface Interview {
+  public_id: string
+  candidate_reference: string
+  candidate_name: string
+  requisition_title: string
+  interviewer: number
+  interviewer_name: string
+  interviewer_email: string
+  status: InterviewStatus
+  duration_minutes: number
+  timezone: string
+  mode: 'VIDEO' | 'ONSITE' | 'PHONE'
+  meeting_link: string
+  location: string
+  candidate_availability_note: string
+  candidate_windows: Slot[]
+  proposed_slots: Slot[]
+  calendar_source: string
+  calendar_source_label: string
+  confirmed_start: string | null
+  confirmed_end: string | null
+  candidate_confirmed_at: string | null
+  interviewer_confirmed_at: string | null
+  cancellation_reason: string
+  created_by_name: string
+  created_at: string
+  updated_at: string
+}
+
+export interface LocalWindow {
+  date: string
+  start_time: string
+  end_time: string
+}

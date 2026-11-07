@@ -416,3 +416,29 @@ Rules:
 UI:
 - **Screening** (queue, filtered to results awaiting review by default) → **Review**.
 - Or open the candidate's **Screening** tab. The result view shows the candidate's statements separately from the AI interpretation, unresolved questions, warnings and the transcript (recruiters only).
+
+
+## Module 12 — Scheduling & Calendar Agent
+
+The `scheduling` app (`/api/v1/scheduling/`) implements the availability half of Agent 3 (FR-09, SRS §8).
+
+**Calendar source:** the internal availability calendar (`AvailabilitySlot`), labelled as such in every API response and screen. No Google/Microsoft calendar is connected. Interviewers (any staff user) maintain their own windows; recruiters can maintain anyone's. All times are stored in UTC. Each window and each candidate time zone is an IANA zone, and the UI shows times in the candidate's zone and the viewer's own zone.
+
+**Flow:**
+1. **Plan.** `POST candidates/<candidate_uuid>/interviews/` (recruiter; candidate must be `APPROVED_FOR_INTERVIEW`). Body: interviewer, duration, candidate time zone, format plus link/location, and candidate availability windows (`[{date, start_time, end_time}]` in the candidate's zone).
+2. **Slot calculation.** The engine intersects the candidate's windows with the interviewer's availability. It excludes booked interviews, respects `SCHEDULING_MIN_NOTICE_HOURS`, and steps by `SCHEDULING_SLOT_STEP_MINUTES`, returning up to `SCHEDULING_MAX_PROPOSED_SLOTS` slots.
+   - With slots, the interview is `PROPOSED`.
+   - With none, it is `NEEDS_HR_COORDINATION` (the SRS §14 HR task).
+   - Either way, the candidate moves to `INTERVIEW_PROPOSED`. Every calendar check is audited.
+3. **Re-propose.** `POST interviews/<uuid>/propose/` re-runs the check with updated details or windows.
+4. **Confirm.** `POST interviews/<uuid>/confirm-slot/` takes `{slot_start, candidate_confirmed, interviewer_confirmed}`. Both confirmations are required, the slot must be one of the proposed slots, and it is re-checked against the calendar so it can't be double-booked. The interview becomes `SLOT_CONFIRMED`.
+5. **Cancel.** `POST interviews/<uuid>/cancel/` (`reason`) returns the candidate to `APPROVED_FOR_INTERVIEW`.
+
+**Other endpoints:**
+- `GET/POST availability/`, `DELETE availability/<uuid>/`
+- `GET interviews/?status=ACTIVE|<status>&mine=1`
+- `GET interviews/<uuid>/`
+
+**UI:**
+- The **Interviews & Availability** page lists active and scheduled interviews and lets users manage availability.
+- The candidate **Interview** tab covers planning, slot confirmation, re-proposing and cancelling.

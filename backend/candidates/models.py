@@ -139,6 +139,15 @@ class CandidateEvent(models.Model):
         SCREENING_CANCELLED = "SCREENING_CANCELLED", "Screening Cancelled"
         CONSENT_UPDATED = "CONSENT_UPDATED", "Consent Updated"
         SCREENING_DECISION_RECORDED = "SCREENING_DECISION_RECORDED", "Screening Decision Recorded"
+        INTERVIEW_PLANNED = "INTERVIEW_PLANNED", "Interview Planned"
+        INTERVIEW_SLOTS_PROPOSED = "INTERVIEW_SLOTS_PROPOSED", "Interview Slots Proposed (Calendar Checked)"
+        INTERVIEW_NO_SHARED_AVAILABILITY = "INTERVIEW_NO_SHARED_AVAILABILITY", "No Shared Availability - HR Task"
+        INTERVIEW_SLOT_CONFIRMED = "INTERVIEW_SLOT_CONFIRMED", "Interview Slot Confirmed"
+        INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED", "Interview Cancelled"
+        INVITATION_DRAFTED = "INVITATION_DRAFTED", "Invitation Drafted"
+        INVITATION_APPROVED = "INVITATION_APPROVED", "Invitation Approved"
+        INVITATION_SENT = "INVITATION_SENT", "Invitation Sent"
+        INVITATION_SEND_FAILED = "INVITATION_SEND_FAILED", "Invitation Send Failed"
 
     candidate = models.ForeignKey(Candidate, on_delete=models.CASCADE, related_name="events")
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="candidate_events")
