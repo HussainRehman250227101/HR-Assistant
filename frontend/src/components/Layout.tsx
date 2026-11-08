@@ -3,18 +3,19 @@ import { useAuth } from '../auth/AuthContext'
 import { humanize } from '../lib/format'
 
 const NAV = [
-  { to: '/', label: 'Dashboard', end: true },
-  { to: '/requisitions', label: 'Requisitions' },
+  { to: '/', label: 'Dashboard', end: true, staff: true },
+  { to: '/requisitions', label: 'Requisitions', staff: true },
   { to: '/candidates', label: 'Candidates' },
-  { to: '/shortlist', label: 'Shortlist Review', recruiter: true },
-  { to: '/screening', label: 'Screening', recruiter: true },
-  { to: '/interviews', label: 'Interviews & Availability' },
-  { to: '/activity', label: 'Audit Log' },
-  { to: '/settings', label: 'Integrations', recruiter: true },
-] as { to: string; label: string; end?: boolean; recruiter?: boolean }[]
+  { to: '/shortlist', label: 'Shortlist Review', staff: true },
+  { to: '/screening', label: 'Screening', staff: true },
+  { to: '/interviews', label: 'Interviews & Availability', staff: true },
+  { to: '/my-schedule', label: 'My Schedule' },
+  { to: '/activity', label: 'Audit Log', staff: true },
+  { to: '/settings', label: 'Integrations', staff: true },
+] as { to: string; label: string; end?: boolean; staff?: boolean }[]
 
 export function Layout() {
-  const { user, logout, isRecruiter } = useAuth()
+  const { user, logout, hasFullAccess } = useAuth()
   return (
     <div className="min-h-screen md:flex">
       <aside className="border-b border-slate-200 bg-slate-900 text-slate-100 md:min-h-screen md:w-60 md:border-r md:border-b-0">
@@ -23,7 +24,7 @@ export function Layout() {
           <div className="text-xs text-slate-400">Human-supervised hiring workflow</div>
         </div>
         <nav className="flex flex-wrap gap-1 px-3 pb-3 md:flex-col">
-          {NAV.filter((item) => !item.recruiter || isRecruiter).map((item) => (
+          {NAV.filter((item) => !item.staff || hasFullAccess).map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

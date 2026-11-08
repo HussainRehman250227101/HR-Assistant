@@ -1,6 +1,6 @@
-import { useEffect, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { errorMessage } from '../lib/api'
-import { humanize, toneFor } from '../lib/format'
+import { displayToIsoDate, humanize, isoToDisplayDate, maskDateInput, toneFor } from '../lib/format'
 
 const cx = (...classes: (string | false | null | undefined)[]) => classes.filter(Boolean).join(' ')
 
@@ -117,6 +117,45 @@ const inputClass = 'block w-full rounded-md border-0 px-2.5 py-1.5 text-sm ring-
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={cx(inputClass, props.className)} />
+}
+
+/**
+ * Date entry in DD/MM/YYYY (a native date input always follows the browser's locale). `value` and `onChange` use ISO
+ * `YYYY-MM-DD` ('' while the text is incomplete or not a real date); the calendar button opens the native picker.
+ */
+export function DateInput({ value, onChange, required, className, disabled }: {
+  value: string
+  onChange: (iso: string) => void
+  required?: boolean
+  className?: string
+  disabled?: boolean
+}) {
+  const [draft, setDraft] = useState<string | null>(null)
+  const pickerRef = useRef<HTMLInputElement>(null)
+  const shown = draft !== null && displayToIsoDate(draft) === value ? draft : isoToDisplayDate(value)
+  const invalid = shown !== '' && displayToIsoDate(shown) === ''
+
+  return (
+    <div className={cx('relative', className)}>
+      <input
+        type="text" inputMode="numeric" autoComplete="off" placeholder="DD/MM/YYYY" maxLength={10}
+        required={required} disabled={disabled} value={shown} title="Date as DD/MM/YYYY"
+        ref={(el) => el?.setCustomValidity(invalid ? 'Enter a valid date as DD/MM/YYYY' : '')}
+        onChange={(e) => { const text = maskDateInput(e.target.value); setDraft(text); onChange(displayToIsoDate(text)) }}
+        className={cx(inputClass, 'pr-9')}
+      />
+      <button type="button" aria-label="Pick a date" tabIndex={-1} disabled={disabled}
+        className="absolute inset-y-0 right-0 px-2 text-slate-500 hover:text-slate-800"
+        onClick={() => { try { pickerRef.current?.showPicker() } catch { /* picker not supported: type the date */ } }}>
+        <svg viewBox="0 0 20 20" fill="currentColor" className="h-4 w-4" aria-hidden="true">
+          <path d="M6 2a1 1 0 0 1 1 1v1h6V3a1 1 0 1 1 2 0v1h1a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h1V3a1 1 0 0 1 1-1Zm-2 7v7h12V9H4Z" />
+        </svg>
+      </button>
+      <input ref={pickerRef} type="date" tabIndex={-1} aria-hidden="true" value={value}
+        onChange={(e) => { setDraft(null); onChange(e.target.value) }}
+        className="pointer-events-none absolute right-0 bottom-0 h-0 w-0 opacity-0" />
+    </div>
+  )
 }
 
 export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {

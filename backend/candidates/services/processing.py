@@ -5,6 +5,7 @@ import logging
 from django.utils import timezone
 
 from ..models import CandidateEvent, CandidateStatus, ResumeDocument, ResumeProcessingStatus
+from .contact_details import fill_candidate_details_from_resume
 from .extraction import ResumeExtractionError, extract_resume_text
 
 logger = logging.getLogger(__name__)
@@ -53,6 +54,11 @@ def process_resume_document(document, actor=None):
             event_type=CandidateEvent.EventType.RESUME_EXTRACTION_COMPLETED,
             details={"resume_document_id":str(document.public_id),"text_characters":len(result.text),"warning_count":len(result.warnings)},
         )
+        try:
+            # Before scoring: fills name/contact from the resume so HR doesn't type them and scoring can redact them.
+            fill_candidate_details_from_resume(document,actor=actor)
+        except Exception as exc:
+            logger.error("Candidate detail detection failed. document=%s exception_type=%s",document.public_id,type(exc).__name__)
     except ResumeExtractionError as exc:
         _record_review_state(document,exc.code,exc.message,actor=actor)
     except Exception as exc:

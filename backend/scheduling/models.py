@@ -60,6 +60,8 @@ class Interview(models.Model):
     timezone = models.CharField(max_length=64, help_text="Candidate time zone (IANA).")
     mode = models.CharField(max_length=8, choices=InterviewMode.choices, default=InterviewMode.VIDEO)
     meeting_link = models.URLField(max_length=500, blank=True)
+    contact_whatsapp = models.CharField(max_length=20, blank=True, help_text="WhatsApp number for a WhatsApp video call.")
+    auto_scheduled = models.BooleanField(default=False, help_text="Created and confirmed by the scheduling agent.")
     location = models.CharField(max_length=255, blank=True)
     candidate_availability_note = models.TextField(blank=True)
     candidate_windows = models.JSONField(default=list, blank=True)

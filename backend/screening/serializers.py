@@ -1,8 +1,14 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
+from requisitions.models import Requisition
 from .models import (
-    CallOutcome, Screening, ScreeningCallAttempt, ScreeningChannel, ScreeningConsent, ScreeningDecision, ScreeningReview,
+    CallOutcome, SalaryPeriod, Screening, ScreeningCallAttempt, ScreeningChannel, ScreeningConsent, ScreeningDecision,
+    ScreeningReview,
 )
+from .services.browser import CLIENT_END_REASONS
+from .services.calls import ai_screening_channel
 
 
 class ScreeningCallAttemptSerializer(serializers.ModelSerializer):
@@ -43,12 +49,26 @@ class ScreeningReviewRequestSerializer(serializers.Serializer):
     decision_reason = serializers.CharField(max_length=2000, required=False, allow_blank=True)
 
 
+class ScreeningJobSerializer(serializers.ModelSerializer):
+    """The job description HR compares the candidate's answers with (screening review, FR-08)."""
+
+    class Meta:
+        model = Requisition
+        fields = (
+            "title", "department", "location", "employment_type", "work_mode", "description", "responsibilities",
+            "required_skills", "preferred_skills", "minimum_experience_years", "education_requirements",
+            "salary_min", "salary_max", "currency",
+        )
+        read_only_fields = fields
+
+
 class ScreeningSerializer(serializers.ModelSerializer):
     review = serializers.SerializerMethodField()
     candidate_reference = serializers.UUIDField(source="candidate.public_id", read_only=True)
     candidate_name = serializers.CharField(source="candidate.full_name", read_only=True)
     requisition_reference = serializers.UUIDField(source="requisition.reference_code", read_only=True)
     requisition_title = serializers.CharField(source="requisition.title", read_only=True)
+    job = ScreeningJobSerializer(source="requisition", read_only=True)
     call_attempts = ScreeningCallAttemptSerializer(many=True, read_only=True)
     created_by_name = serializers.SerializerMethodField()
     result_recorded_by_name = serializers.SerializerMethodField()
@@ -56,10 +76,12 @@ class ScreeningSerializer(serializers.ModelSerializer):
     class Meta:
         model = Screening
         fields = (
-            "public_id", "candidate_reference", "candidate_name", "requisition_reference", "requisition_title",
+            "public_id", "candidate_reference", "candidate_name", "requisition_reference", "requisition_title", "job",
             "channel", "status", "call_status", "consent_status", "ai_disclosure_confirmed", "questions",
             "script_version", "max_attempts", "attempt_count", "next_attempt_not_before",
-            "question_answer_pairs", "candidate_stated_availability", "role_requirement_responses",
+            "question_answer_pairs", "candidate_stated_availability", "availability_statement",
+            "expected_salary_min", "expected_salary_max", "expected_salary_currency", "expected_salary_period",
+            "expected_salary_statement", "notice_period", "notice_period_statement", "role_requirement_responses",
             "candidate_questions", "unresolved_questions", "concise_summary",
             "recommended_next_step_for_human_review", "call_timestamp", "transcript", "analysis_warnings",
             "analysis_provider", "analysis_model_version", "analysis_prompt_version",
@@ -84,8 +106,25 @@ class ScreeningSerializer(serializers.ModelSerializer):
 
 
 class ScreeningCreateSerializer(serializers.Serializer):
-    channel = serializers.ChoiceField(choices=ScreeningChannel.choices, default=ScreeningChannel.AI_VOICE)
+    # Default AI route follows SCREENING_VOICE_MODE (browser session unless telephony is enabled).
+    channel = serializers.ChoiceField(choices=ScreeningChannel.choices, default=ai_screening_channel)
     start_call_now = serializers.BooleanField(default=False)
+
+
+class BrowserSessionStartSerializer(serializers.Serializer):
+    consent_acknowledged = serializers.BooleanField(
+        help_text="Must be true: AI voice agent, voice processed by ElevenLabs, transcript retained for HR review, "
+                  "microphone required.",
+    )
+
+
+class BrowserSessionCompleteSerializer(serializers.Serializer):
+    """Browser hints only. Transcripts are never accepted from the browser; they are fetched from ElevenLabs."""
+
+    attempt_id = serializers.UUIDField(required=False)
+    client_end_reason = serializers.ChoiceField(choices=CLIENT_END_REASONS, default="unknown")
+    connected = serializers.BooleanField(required=False, allow_null=True, default=None)
+    conversation_id = serializers.RegexField(r"^[A-Za-z0-9_-]{1,128}$", required=False, allow_blank=True)
 
 
 class ReasonSerializer(serializers.Serializer):
@@ -110,7 +149,20 @@ class ManualResultSerializer(serializers.Serializer):
     consent_status = serializers.ChoiceField(choices=ScreeningConsent.choices)
     question_answer_pairs = ManualAnswerSerializer(many=True)
     candidate_stated_availability = serializers.CharField(max_length=2000, required=False, allow_blank=True)
+    expected_salary_min = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"),
+                                                   required=False, allow_null=True)
+    expected_salary_max = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0.01"),
+                                                   required=False, allow_null=True)
+    expected_salary_currency = serializers.RegexField(r"^[A-Za-z]{3}$", required=False, allow_blank=True)
+    expected_salary_period = serializers.ChoiceField(choices=SalaryPeriod.choices, required=False, allow_blank=True)
+    notice_period = serializers.CharField(max_length=300, required=False, allow_blank=True)
     candidate_questions = serializers.ListField(child=serializers.CharField(max_length=500), required=False)
     unresolved_questions = serializers.ListField(child=serializers.CharField(max_length=500), required=False)
     concise_summary = serializers.CharField(max_length=4000)
     call_timestamp = serializers.DateTimeField(required=False)
+
+    def validate(self, attrs):
+        low, high = attrs.get("expected_salary_min"), attrs.get("expected_salary_max")
+        if low is not None and high is not None and low > high:
+            raise serializers.ValidationError({"expected_salary_max": "Must be at least the minimum."})
+        return attrs

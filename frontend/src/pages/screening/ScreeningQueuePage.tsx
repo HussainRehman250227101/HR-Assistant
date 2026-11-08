@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { useScreeningQueue } from '../../api/hooks'
 import { Badge, Card, Empty, ErrorAlert, Loading, PageHeader, Select, Table, Td } from '../../components/ui'
 import { formatDate, humanize } from '../../lib/format'
+import { ScreeningJobPanel } from './ScreeningJobPanel'
 import { ScreeningResult } from './ScreeningResult'
 import { ScreeningReviewForm } from './ScreeningReviewForm'
 
@@ -14,22 +15,27 @@ export function ScreeningQueuePage() {
   const queue = useScreeningQueue({ status: status || undefined })
   return (
     <>
-      <PageHeader title="Screening" subtitle="Screening results awaiting your decision, calls to place, and failures needing action (FR-05–FR-08)." />
+      <PageHeader title="Screening" subtitle="Screening results awaiting your decision, AI screenings to run (browser sessions or calls), and failures needing action (FR-05–FR-08)." />
       <Card>
         <div className="mb-4 max-w-xs">
           <Select value={status} onChange={(e) => setStatus(e.target.value)} options={STATUSES.map((s) => ({ value: s, label: s ? humanize(s) : 'All active' }))} />
         </div>
         <ErrorAlert error={queue.error} />
         {queue.isLoading ? <Loading /> : !queue.data?.length ? <Empty>Nothing here.</Empty> : (
-          <Table head={['Candidate', 'Requisition', 'Channel', 'Status', 'Call result', 'Recommended next step', 'Updated', '']}>
+          <Table head={['Candidate', 'Requisition', 'Channel', 'Status', 'Call / session result', 'Recommended next step', 'Updated', '']}>
             {queue.data.map((s) => (
               <Fragment key={s.public_id}>
                 <tr className="hover:bg-slate-50">
                   <Td><Link to={`/candidates/${s.candidate_reference}?tab=screening`} className="font-medium text-indigo-700 hover:underline">{s.candidate_name || 'Candidate'}</Link></Td>
                   <Td>{s.requisition_title}</Td>
-                  <Td>{s.channel === 'AI_VOICE' ? `AI call (${s.attempt_count}/${s.max_attempts})` : 'Human-led'}</Td>
+                  <Td>{s.channel === 'AI_VOICE' ? `AI call (${s.attempt_count}/${s.max_attempts})` : s.channel === 'BROWSER_VOICE' ? `Browser session (${s.attempt_count}/${s.max_attempts})` : 'Human-led'}</Td>
                   <Td><Badge value={s.status} /></Td>
-                  <Td><Badge value={s.call_status} /></Td>
+                  <Td>
+                    <Badge value={s.call_status} />
+                    {s.channel === 'BROWSER_VOICE' && ['PENDING_CALL', 'CALL_IN_PROGRESS'].includes(s.status) && (
+                      <Link to={`/screening/${s.public_id}/browser`} className="ml-2 text-xs text-indigo-700 hover:underline">Open session</Link>
+                    )}
+                  </Td>
                   <Td className="text-xs">{humanize(s.recommended_next_step_for_human_review)}</Td>
                   <Td>{formatDate(s.updated_at)}</Td>
                   <Td>
@@ -45,7 +51,10 @@ export function ScreeningQueuePage() {
                     <td colSpan={8} className="bg-white p-4">
                       <div className="grid gap-6 lg:grid-cols-2">
                         <ScreeningResult screening={s} />
-                        <ScreeningReviewForm screening={s} />
+                        <div className="space-y-6">
+                          <ScreeningJobPanel screening={s} />
+                          <ScreeningReviewForm screening={s} />
+                        </div>
                       </div>
                     </td>
                   </tr>

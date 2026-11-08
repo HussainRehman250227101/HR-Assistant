@@ -1,23 +1,42 @@
 import { useState } from 'react'
 import { Alert, Badge, KeyValue } from '../../components/ui'
-import { formatDate, humanize } from '../../lib/format'
+import { expectedSalaryText, formatDate, humanize, screeningChannelLabel } from '../../lib/format'
 import type { Screening } from '../../lib/types'
+
+function StandardAnswer({ label, value, quote }: { label: string; value: string; quote: string }) {
+  return (
+    <div className="rounded-md p-3 text-sm ring-1 ring-slate-200">
+      <div className="text-xs font-semibold text-slate-500 uppercase">{label}</div>
+      <div className={value ? 'mt-1 font-medium text-slate-900' : 'mt-1 text-slate-400'}>{value || 'Not stated'}</div>
+      {quote && <p className="mt-1 text-slate-600"><span className="text-xs font-semibold text-emerald-700 uppercase">Candidate said: </span>“{quote}”</p>}
+    </div>
+  )
+}
 
 /** SRS §8 Agent 2 output fields; candidate statements are shown separately from interpretations (FR-07). */
 export function ScreeningResult({ screening }: { screening: Screening }) {
   const [showTranscript, setShowTranscript] = useState(false)
+  const browser = screening.channel === 'BROWSER_VOICE'
+  const aiVoice = screening.channel !== 'HUMAN_LED'
   return (
     <div className="space-y-4">
       <KeyValue items={[
-        ['Call status', <Badge key="c" value={screening.call_status} />],
+        [browser ? 'Session status' : 'Call status', <Badge key="c" value={screening.call_status} />],
         ['Consent', <Badge key="k" value={screening.consent_status} />],
-        ['Channel', screening.channel === 'AI_VOICE' ? 'AI voice call (Twilio + ElevenLabs)' : 'Human-led screening'],
-        ['Call time', formatDate(screening.call_timestamp)],
+        ['Channel', screeningChannelLabel(screening.channel)],
+        [browser ? 'Session time' : 'Call time', formatDate(screening.call_timestamp)],
         ['AI disclosure detected', screening.ai_disclosure_confirmed === null ? 'n/a' : screening.ai_disclosure_confirmed ? 'Yes' : 'No'],
         ['Recommended next step (for HR)', humanize(screening.recommended_next_step_for_human_review)],
-        ['Candidate stated availability', screening.candidate_stated_availability],
         ['Recorded by', screening.result_recorded_by_name ?? (screening.analysis_model_version ? `AI summary · ${screening.analysis_model_version}` : '')],
       ]} />
+      <div>
+        <h4 className="mb-2 text-xs font-semibold text-slate-500 uppercase">Salary, notice period and interview availability</h4>
+        <div className="grid gap-2 sm:grid-cols-3">
+          <StandardAnswer label="Expected salary" value={expectedSalaryText(screening)} quote={screening.expected_salary_statement} />
+          <StandardAnswer label="Notice period / start" value={screening.notice_period} quote={screening.notice_period_statement} />
+          <StandardAnswer label="Interview availability" value={screening.candidate_stated_availability} quote={screening.availability_statement} />
+        </div>
+      </div>
       {screening.concise_summary && (
         <div>
           <h4 className="mb-1 text-xs font-semibold text-slate-500 uppercase">Summary</h4>
@@ -36,7 +55,7 @@ export function ScreeningResult({ screening }: { screening: Screening }) {
                   <Badge value={qa.answer_status} />
                 </div>
                 {qa.candidate_statement && <p className="mt-1"><span className="text-xs font-semibold text-emerald-700 uppercase">Candidate said: </span>“{qa.candidate_statement}”</p>}
-                {qa.agent_interpretation && <p className="mt-1 text-slate-600"><span className="text-xs font-semibold text-slate-500 uppercase">{screening.channel === 'AI_VOICE' ? 'AI interpretation' : 'Recruiter note'}: </span>{qa.agent_interpretation}</p>}
+                {qa.agent_interpretation && <p className="mt-1 text-slate-600"><span className="text-xs font-semibold text-slate-500 uppercase">{aiVoice ? 'AI interpretation' : 'Recruiter note'}: </span>{qa.agent_interpretation}</p>}
               </li>
             ))}
           </ol>
@@ -67,7 +86,7 @@ export function ScreeningResult({ screening }: { screening: Screening }) {
       {screening.transcript.length > 0 && (
         <div>
           <button className="text-sm text-indigo-700 hover:underline" onClick={() => setShowTranscript((v) => !v)}>
-            {showTranscript ? 'Hide' : 'Show'} call transcript ({screening.transcript.length} turns)
+            {showTranscript ? 'Hide' : 'Show'} {browser ? 'session' : 'call'} transcript ({screening.transcript.length} turns)
           </button>
           {showTranscript && (
             <div className="mt-2 max-h-96 space-y-1 overflow-y-auto rounded-md bg-slate-50 p-3 text-sm">

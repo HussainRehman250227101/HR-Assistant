@@ -30,6 +30,11 @@ class WorkMode(models.TextChoices):
     REMOTE = "REMOTE", "Remote"
 
 
+class InterviewFormat(models.TextChoices):
+    ONSITE = "ONSITE", "On-site"
+    VIDEO = "VIDEO", "Video call (WhatsApp)"
+
+
 class Requisition(models.Model):
     """An approved or draft role request owned by an HR recruiter."""
 
@@ -48,6 +53,10 @@ class Requisition(models.Model):
     required_skills = models.JSONField(default=list, blank=True)
     preferred_skills = models.JSONField(default=list, blank=True)
     screening_questions = models.JSONField(default=list, blank=True)
+    # How interviews for this role are held (set by HR at creation). The scheduling agent emails the candidate
+    # accordingly: ONSITE -> the role location; VIDEO -> a WhatsApp video call on `interview_whatsapp_number`.
+    interview_format = models.CharField(max_length=10, choices=InterviewFormat.choices, default=InterviewFormat.ONSITE)
+    interview_whatsapp_number = models.CharField(max_length=20, blank=True)
     minimum_experience_years = models.DecimalField(
         max_digits=4,
         decimal_places=1,

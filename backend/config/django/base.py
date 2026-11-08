@@ -3,6 +3,8 @@
 from pathlib import Path
 import os
 
+from django.core.exceptions import ImproperlyConfigured
+
 from config.env import BASE_DIR, env
 
 env.read_env(BASE_DIR / ".env", overwrite=False)
@@ -46,6 +48,8 @@ MIDDLEWARE = [
 ]
 
 ROOT_URLCONF = "config.urls"
+# Blanks live provider keys during `manage.py test` so no test can make a real, billed call.
+TEST_RUNNER = "config.test_runner.ProviderSafeTestRunner"
 TEMPLATES = [{
     "BACKEND": "django.template.backends.django.DjangoTemplates",
     "DIRS": [],
@@ -95,6 +99,8 @@ SECURE_HSTS_INCLUDE_SUBDOMAINS = False
 SECURE_HSTS_PRELOAD = False
 
 EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend") # type:ignore
+# Used only by django.core.mail.backends.filebased.EmailBackend: each email is saved as a readable .log file here.
+EMAIL_FILE_PATH = env("EMAIL_FILE_PATH", default=str(BASE_DIR / "sent-emails")) # type:ignore
 EMAIL_HOST = env("EMAIL_HOST", default="") # type:ignore
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
@@ -146,7 +152,57 @@ LANGGRAPH_STRICT_MSGPACK = env.bool("LANGGRAPH_STRICT_MSGPACK", default=True)
 if LANGGRAPH_STRICT_MSGPACK:
     os.environ["LANGGRAPH_STRICT_MSGPACK"] = "true"
 
-# Module 10: screening calls via ElevenLabs Conversational AI over its native Twilio integration.
+# Automatic resume scoring (Celery). Beat enqueues a cycle every AUTO_SCORING_INTERVAL_SECONDS; the worker
+# extracts pending resumes and starts the LangGraph scoring workflow for new ones. The human shortlist gate
+# is unchanged. Run `celery -A config worker --pool=solo` and `celery -A config beat` (see README).
+AUTO_SCORING_ENABLED = env.bool("AUTO_SCORING_ENABLED", default=True)
+AUTO_SCORING_INTERVAL_SECONDS = env.int("AUTO_SCORING_INTERVAL_SECONDS", default=120)
+AUTO_SCORING_BATCH_LIMIT = env.int("AUTO_SCORING_BATCH_LIMIT", default=10)
+if AUTO_SCORING_INTERVAL_SECONDS < 30 or AUTO_SCORING_BATCH_LIMIT < 1:
+    raise ImproperlyConfigured("AUTO_SCORING_INTERVAL_SECONDS must be >= 30 and AUTO_SCORING_BATCH_LIMIT >= 1.")
+# Default broker: a local SQLite file through SQLAlchemy (no extra service). Use Redis in production,
+# e.g. CELERY_BROKER_URL=redis://localhost:6379/0 (and pip install redis).
+CELERY_BROKER_URL = (
+    env("CELERY_BROKER_URL", default="").strip()  # type:ignore
+    or "sqla+sqlite:///" + (BASE_DIR / "celery-broker.sqlite3").as_posix()
+)
+CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
+CELERY_TASK_IGNORE_RESULT = True
+CELERY_TIMEZONE = TIME_ZONE
+CELERY_ENABLE_UTC = True
+CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # keep Django's LOGGING (no resume text, contacts or keys in logs)
+CELERY_BEAT_SCHEDULE_FILENAME = str(BASE_DIR / "celerybeat-schedule")
+CELERY_BEAT_SCHEDULE = {
+    "auto-score-new-resumes": {
+        "task": "workflows.tasks.auto_score_new_resumes",
+        "schedule": float(AUTO_SCORING_INTERVAL_SECONDS),
+        # A cycle that waited longer than one interval in the queue is dropped; the next one covers it.
+        "options": {"expires": AUTO_SCORING_INTERVAL_SECONDS},
+    },
+    "process-declined-candidates": {
+        "task": "candidates.tasks.process_declined_candidates",
+        "schedule": float(AUTO_SCORING_INTERVAL_SECONDS),
+        "options": {"expires": AUTO_SCORING_INTERVAL_SECONDS},
+    },
+    "auto-schedule-approved-candidates": {
+        "task": "scheduling.tasks.auto_schedule_approved_candidates",
+        "schedule": float(AUTO_SCORING_INTERVAL_SECONDS),
+        "options": {"expires": AUTO_SCORING_INTERVAL_SECONDS},
+    },
+}
+
+# Module 16: AI voice screening mode.
+#   "browser"   (default) - the ElevenLabs agent talks to the candidate in the browser over WebRTC; no phone
+#                call is placed and no Twilio setting is needed (only ELEVENLABS_API_KEY + ELEVENLABS_AGENT_ID).
+#   "telephony" - Module 10 outbound phone calls through ElevenLabs' native Twilio integration.
+SCREENING_VOICE_MODE = env("SCREENING_VOICE_MODE", default="browser").strip().lower() # type:ignore
+if SCREENING_VOICE_MODE not in ("browser", "telephony"):
+    raise ImproperlyConfigured("SCREENING_VOICE_MODE must be 'browser' or 'telephony'.")
+# A browser session that never connected (or was left open) is treated as abandoned after this long.
+SCREENING_BROWSER_SESSION_TIMEOUT_MINUTES = env.int("SCREENING_BROWSER_SESSION_TIMEOUT_MINUTES", default=15)
+
+# Module 10: screening calls via ElevenLabs Conversational AI over its native Twilio integration
+# (used only when SCREENING_VOICE_MODE=telephony; every Twilio setting is optional otherwise).
 TELEPHONY_PROVIDER = env("TELEPHONY_PROVIDER", default="twilio") # type:ignore
 VOICE_AI_PROVIDER = env("VOICE_AI_PROVIDER", default="elevenlabs") # type:ignore
 TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="") # type:ignore
@@ -171,6 +227,16 @@ SCREENING_HUMAN_CONTACT = env("SCREENING_HUMAN_CONTACT", default="the recruiting
 SCHEDULING_MIN_NOTICE_HOURS = env.int("SCHEDULING_MIN_NOTICE_HOURS", default=12)
 SCHEDULING_SLOT_STEP_MINUTES = env.int("SCHEDULING_SLOT_STEP_MINUTES", default=30)
 SCHEDULING_MAX_PROPOSED_SLOTS = env.int("SCHEDULING_MAX_PROPOSED_SLOTS", default=6)
+# Automatic scheduling (Agent 3): after HR approves a screening the agent matches the candidate's stated
+# availability with an interviewer's calendar and emails the invitation without a separate send approval.
+INTERVIEW_AUTO_SCHEDULING_ENABLED = env.bool("INTERVIEW_AUTO_SCHEDULING_ENABLED", default=True)
+SCHEDULING_DEFAULT_TIMEZONE = env("SCHEDULING_DEFAULT_TIMEZONE", default="Asia/Karachi") # type:ignore
+SCHEDULING_DEFAULT_DURATION_MINUTES = env.int("SCHEDULING_DEFAULT_DURATION_MINUTES", default=45)
+
+# Declined candidates (user decision 2026-11-08): HR's DECLINE decision queues a friendly rejection email, then the
+# candidate's resume and personal data are erased automatically (the name is kept so HR can tell who was declined).
+REJECTION_AUTO_ENABLED = env.bool("REJECTION_AUTO_ENABLED", default=True)
+REJECTION_MAX_EMAIL_ATTEMPTS = env.int("REJECTION_MAX_EMAIL_ATTEMPTS", default=5)
 
 # Module 13: interview invitation emails (sent through EMAIL_BACKEND after explicit HR approval).
 INVITATION_RESCHEDULE_CONTACT = env("INVITATION_RESCHEDULE_CONTACT", default=DEFAULT_FROM_EMAIL) # type:ignore
@@ -195,5 +261,10 @@ LOGGING = {
     "formatters": {"standard": {"format": "{asctime} {levelname} {name}: {message}", "style": "{"}},
     "handlers": {"console": {"class": "logging.StreamHandler", "formatter": "standard"}},
     "root": {"handlers": ["console"], "level": LOG_LEVEL},
-    "loggers": {"django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False}},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": LOG_LEVEL, "propagate": False},
+        # httpx logs full request URLs at INFO (agent IDs, conversation IDs, Twilio account SIDs): keep them out of logs.
+        "httpx": {"level": "WARNING"},
+        "httpcore": {"level": "WARNING"},
+    },
 }

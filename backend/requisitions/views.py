@@ -5,7 +5,7 @@ from rest_framework.pagination import PageNumberPagination
 from django.db.models import Q
 
 from accounts.models import UserRole
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff, has_full_access
 from audit.models import log_audit
 from .models import Requisition, RequisitionStatus
 from .serializers import RequisitionSerializer
@@ -25,16 +25,16 @@ class RequisitionViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if getattr(self, "action", None) in {"create", "update", "partial_update", "destroy"}:
-            return [IsRecruiterOrAdmin()]
+            return [IsHRStaff()]
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
         user = self.request.user
         queryset = Requisition.objects.select_related("created_by", "hiring_manager")
-        if user.is_superuser or user.role in (UserRole.ADMIN, UserRole.RECRUITER):
+        if has_full_access(user):
             pass
-        elif user.role == UserRole.HIRING_MANAGER:
-            queryset = queryset.filter(hiring_manager=user)
+        elif user.role == UserRole.RECRUITER:  # interviewer only: requisitions of the candidates assigned to them
+            queryset = queryset.filter(interviews__interviewer=user).exclude(interviews__status="CANCELLED").distinct()
         else:
             return queryset.none()
 

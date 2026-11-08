@@ -9,7 +9,11 @@ from screening.services.voice import VoiceConfigurationError, VoiceProviderError
 
 
 class Command(BaseCommand):
-    help = "Poll Twilio/ElevenLabs for in-progress screening calls and conclude finished ones (webhook fallback)."
+    help = (
+        "Poll ElevenLabs (and Twilio in telephony mode) for in-progress screening calls and browser voice sessions "
+        "and conclude finished ones. Optional: browser sessions are concluded by the browser itself; this only "
+        "recovers sessions whose page was closed, and is the webhook fallback for telephony mode."
+    )
 
     def add_arguments(self, parser):
         parser.add_argument("--limit", type=int, default=20)

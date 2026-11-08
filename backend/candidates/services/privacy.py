@@ -36,7 +36,7 @@ def close_candidate(candidate, actor, reason):
     if candidate.current_status == CandidateStatus.CLOSED:
         raise PrivacyError("This candidate is already closed.")
     if Screening.objects.filter(candidate=candidate, status__in=(ScreeningStatus.CALL_IN_PROGRESS, ScreeningStatus.ANALYZING)).exists():
-        raise PrivacyError("A screening call is in progress. Wait for it to finish before closing.")
+        raise PrivacyError("A screening call or browser voice session is in progress. Wait for it to finish before closing.")
     if candidate.interviews.filter(status=InterviewStatus.SCHEDULED).exists():
         raise PrivacyError("Cancel the scheduled interview first so the candidate receives a cancellation notice.")
     with transaction.atomic():
@@ -53,7 +53,7 @@ def close_candidate(candidate, actor, reason):
     return candidate
 
 
-def erase_personal_data(candidate, actor, reason):
+def erase_personal_data(candidate, actor, reason, keep_name=False):
     from communications.models import CommunicationLog
     from scoring.models import ResumeEvaluation
     from screening.models import Screening
@@ -80,10 +80,13 @@ def erase_personal_data(candidate, actor, reason):
         Screening.objects.filter(candidate=candidate).update(
             transcript=[], question_answer_pairs=[], candidate_stated_availability="", role_requirement_responses=[],
             candidate_questions=[], unresolved_questions=[], concise_summary="[erased]",
+            availability_statement="", expected_salary_min=None, expected_salary_max=None, expected_salary_currency="",
+            expected_salary_period="", expected_salary_statement="", notice_period="", notice_period_statement="",
         )
         candidate.interviews.update(candidate_availability_note="", candidate_windows=[])
         CommunicationLog.objects.filter(candidate=candidate).update(recipient=REDACTED_EMAIL, cc=[], body="[erased]", meeting_details={})
-        candidate.full_name = ""
+        if not keep_name:  # declined candidates keep their name only, so HR can tell who they were
+            candidate.full_name = ""
         candidate.email = None
         candidate.phone = ""
         candidate.location = ""
@@ -92,8 +95,9 @@ def erase_personal_data(candidate, actor, reason):
         candidate.closed_reason = "[erased]"
         candidate.personal_data_erased_at = timezone.now()
         candidate.save()
-        record_event(candidate, actor, CandidateEvent.EventType.PERSONAL_DATA_ERASED, reason=reason, resume_files=len(files))
-        log_audit(actor, "CANDIDATE_PERSONAL_DATA_ERASED", "candidate", candidate.public_id, reason=reason)
+        record_event(candidate, actor, CandidateEvent.EventType.PERSONAL_DATA_ERASED, reason=reason, resume_files=len(files),
+                     name_kept=keep_name)
+        log_audit(actor, "CANDIDATE_PERSONAL_DATA_ERASED", "candidate", candidate.public_id, reason=reason, name_kept=keep_name)
 
     def remove_files():
         from django.core.files.storage import default_storage

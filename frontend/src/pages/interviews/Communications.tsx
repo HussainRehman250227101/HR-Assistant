@@ -37,7 +37,7 @@ export function MessageEditor({ log }: { log: CommunicationLog }) {
         </div>
       )}
       {log.send_status === 'SENT' && (
-        <Alert tone="success">Sent {formatDate(log.sent_at)} · approved by {log.approved_by_name} · provider {log.provider} · message id {log.provider_message_id}</Alert>
+        <Alert tone="success">Sent {formatDate(log.sent_at)} · {log.auto_sent ? `sent automatically by the scheduling agent after ${log.approved_by_name} approved the screening` : `approved by ${log.approved_by_name}`} · provider {log.provider} · message id {log.provider_message_id}</Alert>
       )}
       <Modal open={confirmOpen} title="Confirm sending" onClose={() => setConfirmOpen(false)}>
         <div className="space-y-3 text-sm">
@@ -84,12 +84,19 @@ export function CommunicationsCard({ candidateId }: { candidateId: string }) {
         {!logs.data?.length ? <Empty>No candidate communications yet.</Empty> : (
           <ul className="divide-y divide-slate-100 text-sm">
             {logs.data.map((l) => (
-              <li key={l.public_id} className="flex flex-wrap items-center justify-between gap-2 py-2">
-                <span>{humanize(l.kind)} · {l.subject}</span>
-                <span className="flex items-center gap-2 text-xs text-slate-500">
-                  <Badge value={l.send_status === 'NOT_SENT' ? 'PENDING' : l.send_status} label={humanize(l.send_status)} />
-                  {l.sent_at ? formatDate(l.sent_at) : formatDate(l.created_at)}
-                </span>
+              <li key={l.public_id} className="py-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>{humanize(l.kind)} · {l.subject}</span>
+                  <span className="flex items-center gap-2 text-xs text-slate-500">
+                    {l.auto_sent && <Badge value="INFO" label="Sent automatically" />}
+                    <Badge value={l.send_status === 'NOT_SENT' ? 'PENDING' : l.send_status} label={humanize(l.send_status)} />
+                    {l.sent_at ? formatDate(l.sent_at) : formatDate(l.created_at)}
+                  </span>
+                </div>
+                <details className="mt-1 text-xs text-slate-600">
+                  <summary className="cursor-pointer text-indigo-700">Read the email (to {l.recipient})</summary>
+                  <pre className="mt-2 rounded-md bg-slate-50 p-3 font-mono whitespace-pre-wrap ring-1 ring-slate-200">{l.body}</pre>
+                </details>
               </li>
             ))}
           </ul>

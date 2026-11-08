@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useCandidateInterviews, useCandidateScreenings, useInterviewAction, usePlanInterview } from '../../api/hooks'
+import { useAutoSchedule, useCandidateEvents, useCandidateInterviews, useCandidateScreenings, useInterviewAction, usePlanInterview } from '../../api/hooks'
 import { Alert, Badge, Button, Card, Empty, ErrorAlert, Field, Input, KeyValue, Loading, Modal } from '../../components/ui'
 import { BROWSER_TZ, formatDate, formatInZone, humanize } from '../../lib/format'
 import type { Candidate, Interview } from '../../lib/types'
@@ -47,7 +47,8 @@ export function InterviewDetails({ interview }: { interview: Interview }) {
       ['Duration', `${interview.duration_minutes} minutes`],
       ['Candidate time zone', interview.timezone],
       ['Format', humanize(interview.mode)],
-      ['Meeting link / location', interview.meeting_link || interview.location],
+      ['Where / how', interview.meeting_link || (interview.contact_whatsapp ? `WhatsApp video call on ${interview.contact_whatsapp}` : interview.location)],
+      ['Scheduled by', interview.auto_scheduled ? 'Scheduling agent (automatic)' : interview.created_by_name],
       ['Confirmed slot', interview.confirmed_start ? formatInZone(interview.confirmed_start, interview.timezone) : ''],
       ['Calendar source', interview.calendar_source_label],
       ['Candidate availability (stated)', interview.candidate_availability_note],
@@ -82,7 +83,16 @@ function ActiveInterview({ interview, canEdit, children }: { interview: Intervie
           <Alert tone="info">Rescheduling: the previously sent time no longer applies. Confirm a new slot, then approve the updated invitation.</Alert>
         )}
         {canEdit && <InvitationSection interview={interview} />}
-        {interview.status === 'SCHEDULED' && <Alert tone="success">Invitation approved and sent. The interview is scheduled.</Alert>}
+        {interview.status === 'SCHEDULED' && (
+          <Alert tone="success">
+            {interview.auto_scheduled
+              ? 'The scheduling agent matched the candidate and interviewer availability and sent the invitation automatically. The interview is scheduled.'
+              : 'Invitation approved and sent. The interview is scheduled.'}
+          </Alert>
+        )}
+        {interview.status === 'SLOT_CONFIRMED' && interview.auto_scheduled && (
+          <Alert tone="warning">The agent booked this slot but the invitation email was not sent. Review the draft below and retry sending.</Alert>
+        )}
         {children}
       </div>
       <Modal open={replan} title="Update availability and re-propose slots" onClose={() => setReplan(false)} wide>
@@ -108,14 +118,30 @@ export function InterviewPanel({ candidate, canEdit }: { candidate: Candidate; c
   const active = interviews.data?.find((i) => ACTIVE.includes(i.status))
   const past = interviews.data?.filter((i) => i !== active) ?? []
   const hint = screenings.data?.find((s) => s.candidate_stated_availability)?.candidate_stated_availability
+  const auto = useAutoSchedule(candidate.public_id)
+  const events = useCandidateEvents(candidate.public_id)
+  const lastFailure = events.data?.find((e) => e.event_type === 'INTERVIEW_AUTO_SCHEDULE_FAILED')
+  const failureReason = typeof lastFailure?.details?.reason === 'string' ? lastFailure.details.reason : ''
 
   if (interviews.isLoading) return <Loading />
   return (
     <div className="space-y-6">
       <ErrorAlert error={interviews.error} />
       {active ? <ActiveInterview interview={active} canEdit={canEdit} /> : canEdit && candidate.current_status === 'APPROVED_FOR_INTERVIEW' ? (
-        <Card title="Plan interview (Agent 3)">
-          <p className="mb-4 text-sm text-slate-600">Slots are offered only where the candidate's windows overlap the interviewer's availability and existing bookings. No invitation is sent without your approval.</p>
+        <Card
+          title="Schedule interview (Agent 3)"
+          actions={<Button size="sm" loading={auto.isPending} onClick={() => auto.mutate()}>Run scheduling agent now</Button>}
+        >
+          <div className="mb-4 space-y-3">
+            <ErrorAlert error={auto.error} />
+            <p className="text-sm text-slate-600">
+              Once HR approves a screening, the agent automatically matches the candidate's stated availability with an interviewer's calendar and emails the invitation.
+              If it cannot (no shared time, missing availability or email), the reason is shown here and you can plan the interview manually below.
+            </p>
+            {failureReason && <Alert tone="warning">The agent could not schedule this interview automatically: {failureReason}</Alert>}
+            {auto.data && auto.data.outcome !== 'SCHEDULED' && <Alert tone="info">{auto.data.detail}</Alert>}
+          </div>
+          <h4 className="mb-2 text-sm font-semibold text-slate-700">Plan manually</h4>
           <InterviewPlanForm availabilityHint={hint} submitLabel="Check calendar and propose slots" busy={plan.isPending} error={plan.error} onSubmit={(data) => plan.mutateAsync(data)} />
         </Card>
       ) : !past.length && <Card><Empty>Interview scheduling becomes available once HR approves the candidate for interview.</Empty></Card>}

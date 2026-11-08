@@ -12,12 +12,13 @@ from accounts.models import User, UserRole
 from candidates.models import Candidate, CandidateEvent, CandidateStatus, ConsentStatus
 from requisitions.models import Requisition, RequisitionStatus
 from .models import CallAttemptStatus, CallOutcome, ScreeningStatus
-from .schemas import QuestionAnswer, RoleRequirementResponse, ScreeningAnalysisOutput
+from .schemas import QuestionAnswer, RoleRequirementResponse, SalaryExpectation, ScreeningAnalysisOutput, StatedAnswer
 from .services import calls
 from .services.phone import DestinationNotAllowed, mask_phone, validate_destination
 from .services.voice import VoiceProviderError, verify_elevenlabs_signature
 
-ALWAYS_OPEN = dict(SCREENING_CALL_WINDOW_START_HOUR=0, SCREENING_CALL_WINDOW_END_HOUR=24)
+# Module 10 phone-call tests run in the optional telephony mode (browser mode is the default since Module 16).
+ALWAYS_OPEN = dict(SCREENING_CALL_WINDOW_START_HOUR=0, SCREENING_CALL_WINDOW_END_HOUR=24, SCREENING_VOICE_MODE="telephony")
 
 
 class FakeVoiceClient:
@@ -67,7 +68,10 @@ def analysis_output(**overrides):
                            candidate_statement="I invented the internet in 1950",
                            agent_interpretation="fabricated"),
         ],
-        candidate_stated_availability="Next week after 3pm",
+        salary_expectation=SalaryExpectation(status="NOT_ASKED", minimum=None, maximum=None, currency="",
+                                             period="UNSPECIFIED", candidate_statement=""),
+        notice_period=StatedAnswer(status="STATED", summary="One month", candidate_statement="In one month."),
+        interview_availability=StatedAnswer(status="NOT_ASKED", summary="", candidate_statement=""),
         role_requirement_responses=[RoleRequirementResponse(requirement="Python", candidate_statement="", status="UNCLEAR")],
         candidate_questions=["Is the role remote?"], unresolved_questions=[],
         concise_summary="Candidate answered both questions.",
@@ -89,8 +93,8 @@ TRANSCRIPT = [
 
 class ScreeningFixture:
     def make_fixture(self):
-        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.RECRUITER)
-        self.manager = User.objects.create_user("hm", "hm@example.test", "Pass-12345!", role=UserRole.HIRING_MANAGER)
+        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.ADMIN)
+        self.manager = User.objects.create_user("hm", "hm@example.test", "Pass-12345!", role=UserRole.RECRUITER)
         self.requisition = Requisition.objects.create(
             title="Backend Engineer", department="Eng", description="Build APIs", status=RequisitionStatus.OPEN,
             screening_questions=["Years of Django experience?", "Notice period?"], required_skills=["Python"],
@@ -253,6 +257,14 @@ class ScreeningAPITests(ScreeningFixture, APITestCase):
         self.assertEqual(result.status_code, 200, result.data)
         self.assertEqual(result.data["status"], "AWAITING_HR_REVIEW")
         self.assertEqual(result.data["question_answer_pairs"][1]["answer_status"], "NOT_ASKED")
+        # an interviewer-only recruiter sees an assigned candidate's summary but never the raw transcript
+        from datetime import timedelta
+        from django.utils import timezone
+        from scheduling.models import Interview
+        start = timezone.now() + timedelta(days=2)
+        Interview.objects.create(candidate=self.candidate, requisition=self.candidate.requisition, interviewer=self.manager,
+                                 timezone="UTC", status="SCHEDULED", confirmed_start=start, confirmed_end=start + timedelta(minutes=45),
+                                 mode="ONSITE", location="Office", created_by=self.recruiter)
         self.client.force_authenticate(self.manager)
         detail = self.client.get(reverse("screening:detail", args=[screening_id]))
         self.assertEqual(detail.status_code, 200)

@@ -18,8 +18,8 @@ def utc(*args):
 
 class Fixture:
     def make(self):
-        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.RECRUITER)
-        self.manager = User.objects.create_user("hm", "hm@example.test", "Pass-12345!", role=UserRole.HIRING_MANAGER)
+        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.ADMIN)
+        self.manager = User.objects.create_user("hm", "hm@example.test", "Pass-12345!", role=UserRole.RECRUITER)
         self.requisition = Requisition.objects.create(
             title="Backend Engineer", department="Eng", description="APIs", status=RequisitionStatus.OPEN,
             created_by=self.recruiter, hiring_manager=self.manager,

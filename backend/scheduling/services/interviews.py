@@ -21,9 +21,9 @@ def _windows_to_utc(windows):
     return [(datetime.fromisoformat(w["start"]), datetime.fromisoformat(w["end"])) for w in windows]
 
 
-def _validate_details(mode, meeting_link, location):
-    if mode == InterviewMode.VIDEO and not meeting_link:
-        raise SchedulingError("A meeting link is required for video interviews.")
+def _validate_details(mode, meeting_link, location, contact_whatsapp=""):
+    if mode == InterviewMode.VIDEO and not (meeting_link or contact_whatsapp):
+        raise SchedulingError("A meeting link or a WhatsApp number is required for video interviews.")
     if mode == InterviewMode.ONSITE and not location:
         raise SchedulingError("A location is required for on-site interviews.")
 
@@ -56,7 +56,7 @@ def plan_interview(candidate, actor, data):
     if candidate.requisition.status != RequisitionStatus.OPEN:
         raise SchedulingError("Interviews can only be scheduled for open requisitions.")
     get_zone(data["timezone"])
-    _validate_details(data["mode"], data.get("meeting_link", ""), data.get("location", ""))
+    _validate_details(data["mode"], data.get("meeting_link", ""), data.get("location", ""), data.get("contact_whatsapp", ""))
     with transaction.atomic():
         if Interview.objects.select_for_update().filter(candidate=candidate, status__in=ACTIVE_INTERVIEW_STATUSES).exists():
             raise SchedulingError("This candidate already has an active interview.")
@@ -64,11 +64,13 @@ def plan_interview(candidate, actor, data):
             candidate=candidate, requisition=candidate.requisition, interviewer=data["interviewer"],
             duration_minutes=data["duration_minutes"], timezone=data["timezone"], mode=data["mode"],
             meeting_link=data.get("meeting_link", ""), location=data.get("location", ""),
+            contact_whatsapp=data.get("contact_whatsapp", ""), auto_scheduled=bool(data.get("auto_scheduled")),
             candidate_availability_note=data.get("candidate_availability_note", ""),
             candidate_windows=data["candidate_windows"], created_by=actor,
         )
         record_event(candidate, actor, EVENT.INTERVIEW_PLANNED, interview_id=str(interview.public_id),
-                     duration_minutes=interview.duration_minutes, timezone=interview.timezone)
+                     duration_minutes=interview.duration_minutes, timezone=interview.timezone,
+                     automatic=interview.auto_scheduled)
         _apply_proposal(interview, actor)
         change_candidate_status(candidate, CandidateStatus.INTERVIEW_PROPOSED, actor, "Interview slots being coordinated",
                                 interview_id=str(interview.public_id))
@@ -81,12 +83,12 @@ def repropose(interview, actor, data):
                                 InterviewStatus.SLOT_CONFIRMED, InterviewStatus.SCHEDULED}:
         raise SchedulingError("This interview can no longer be rescheduled.")
     rescheduling = interview.status == InterviewStatus.SCHEDULED
-    for field in ("interviewer", "duration_minutes", "timezone", "mode", "meeting_link", "location",
+    for field in ("interviewer", "duration_minutes", "timezone", "mode", "meeting_link", "location", "contact_whatsapp",
                   "candidate_availability_note", "candidate_windows"):
         if field in data:
             setattr(interview, field, data[field])
     get_zone(interview.timezone)
-    _validate_details(interview.mode, interview.meeting_link, interview.location)
+    _validate_details(interview.mode, interview.meeting_link, interview.location, interview.contact_whatsapp)
     with transaction.atomic():
         if rescheduling:
             # A sent invitation is superseded: the next message is an update with a higher iCalendar SEQUENCE.
@@ -120,7 +122,7 @@ def confirm_slot(interview, actor, slot_start, candidate_confirmed, interviewer_
         interview.status = InterviewStatus.SLOT_CONFIRMED
         interview.save()
         record_event(interview.candidate, actor, EVENT.INTERVIEW_SLOT_CONFIRMED, interview_id=str(interview.public_id),
-                     slot_start=start.isoformat(), timezone=interview.timezone)
+                     slot_start=start.isoformat(), timezone=interview.timezone, automatic=interview.auto_scheduled)
     return interview
 
 

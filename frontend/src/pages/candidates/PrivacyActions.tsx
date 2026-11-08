@@ -6,12 +6,12 @@ import type { Candidate } from '../../lib/types'
 
 /** Authorised closure with a reason, and admin-only erasure of personal data (SRS §9, §12, §13). */
 export function PrivacyActions({ candidate }: { candidate: Candidate }) {
-  const { isRecruiter, isAdmin } = useAuth()
+  const { hasFullAccess, isAdmin } = useAuth()
   const action = useCandidatePrivacyAction(candidate.public_id)
   const [mode, setMode] = useState<'close' | 'erase-personal-data' | null>(null)
   const [reason, setReason] = useState('')
   const [confirmed, setConfirmed] = useState(false)
-  if (!isRecruiter || candidate.personal_data_erased_at) return null
+  if (!hasFullAccess || candidate.personal_data_erased_at) return null
   const closed = candidate.current_status === 'CLOSED'
 
   return (

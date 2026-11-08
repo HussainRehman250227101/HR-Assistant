@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useUsers, type InterviewPlanInput } from '../../api/hooks'
-import { Button, ErrorAlert, Field, Input, Select, Textarea } from '../../components/ui'
+import { Button, ErrorAlert, DateInput, Field, Input, Select, Textarea } from '../../components/ui'
 import { COMMON_TIMEZONES } from '../../lib/format'
 import type { Interview, LocalWindow } from '../../lib/types'
 
@@ -20,6 +20,7 @@ export function InterviewPlanForm({ initial, availabilityHint, submitLabel, busy
   const [tz, setTz] = useState(initial?.timezone ?? 'Asia/Karachi')
   const [mode, setMode] = useState(initial?.mode ?? 'VIDEO')
   const [link, setLink] = useState(initial?.meeting_link ?? '')
+  const [whatsapp, setWhatsapp] = useState(initial?.contact_whatsapp ?? '')
   const [location, setLocation] = useState(initial?.location ?? '')
   const [note, setNote] = useState(initial?.candidate_availability_note ?? availabilityHint ?? '')
   const [windows, setWindows] = useState<LocalWindow[]>([{ date: today(), start_time: '10:00', end_time: '17:00' }])
@@ -30,7 +31,7 @@ export function InterviewPlanForm({ initial, availabilityHint, submitLabel, busy
     e.preventDefault()
     await onSubmit({
       interviewer: Number(interviewer), duration_minutes: Number(duration), timezone: tz, mode,
-      meeting_link: link, location, candidate_availability_note: note, candidate_windows: windows,
+      meeting_link: link, contact_whatsapp: whatsapp, location, candidate_availability_note: note, candidate_windows: windows,
     })
   }
 
@@ -45,9 +46,10 @@ export function InterviewPlanForm({ initial, availabilityHint, submitLabel, busy
         <Field label="Duration (minutes)"><Input type="number" min={15} max={240} step={15} value={duration} onChange={(e) => setDuration(e.target.value)} /></Field>
         <Field label="Candidate time zone"><Select value={tz} onChange={(e) => setTz(e.target.value)} options={COMMON_TIMEZONES.map((z) => ({ value: z, label: z }))} /></Field>
         <Field label="Format">
-          <Select value={mode} onChange={(e) => setMode(e.target.value as Interview['mode'])} options={[{ value: 'VIDEO', label: 'Video call' }, { value: 'ONSITE', label: 'On-site' }, { value: 'PHONE', label: 'Phone' }]} />
+          <Select value={mode} onChange={(e) => setMode(e.target.value as Interview['mode'])} options={[{ value: 'VIDEO', label: 'Video call (link or WhatsApp)' }, { value: 'ONSITE', label: 'On-site' }, { value: 'PHONE', label: 'Phone' }]} />
         </Field>
-        {mode === 'VIDEO' && <Field label="Meeting link" className="sm:col-span-2"><Input type="url" required value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" /></Field>}
+        {mode === 'VIDEO' && <Field label="Meeting link (or WhatsApp number)"><Input type="url" required={!whatsapp} value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…" /></Field>}
+        {mode === 'VIDEO' && <Field label="WhatsApp number (video call)"><Input type="tel" required={!link} value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="+923001234567" /></Field>}
         {mode === 'ONSITE' && <Field label="Location" className="sm:col-span-2"><Input required value={location} onChange={(e) => setLocation(e.target.value)} /></Field>}
       </div>
       <Field label="Candidate's stated availability (from screening)"><Textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
@@ -56,7 +58,7 @@ export function InterviewPlanForm({ initial, availabilityHint, submitLabel, busy
         <div className="space-y-2">
           {windows.map((w, i) => (
             <div key={i} className="flex flex-wrap items-center gap-2">
-              <Input type="date" required value={w.date} onChange={(e) => setWindow(i, 'date', e.target.value)} className="w-40" />
+              <DateInput required value={w.date} onChange={(iso) => setWindow(i, 'date', iso)} className="w-44" />
               <Input type="time" required value={w.start_time} onChange={(e) => setWindow(i, 'start_time', e.target.value)} className="w-28" />
               <span className="text-slate-400">to</span>
               <Input type="time" required value={w.end_time} onChange={(e) => setWindow(i, 'end_time', e.target.value)} className="w-28" />

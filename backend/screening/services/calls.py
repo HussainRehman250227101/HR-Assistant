@@ -3,6 +3,9 @@
 Safeguards (SRS §8, §13, §14): only recruiter-approved candidates, +92 destinations, consent/opt-out
 checks, calling-hours window, attempt limits with a minimum retry interval, one active screening per
 candidate and an atomic claim so retries or duplicate clicks never place a second concurrent call.
+
+Telephone calls run only when SCREENING_VOICE_MODE=telephony. Browser voice sessions (the default AI
+route, no phone call) live in `services/browser.py` and reuse the analysis and escalation helpers here.
 """
 
 import logging
@@ -20,12 +23,12 @@ from llm.exceptions import LLMConfigurationError, LLMProviderError
 from requisitions.models import RequisitionStatus
 from .. import script
 from ..models import (
-    ACTIVE_SCREENING_STATUSES, CallAttemptStatus, CallOutcome, NextStepRecommendation, Screening,
-    ScreeningCallAttempt, ScreeningChannel, ScreeningConsent, ScreeningStatus,
+    ACTIVE_SCREENING_STATUSES, AI_SCREENING_CHANNELS, CallAttemptStatus, CallOutcome, NextStepRecommendation,
+    Screening, ScreeningCallAttempt, ScreeningChannel, ScreeningConsent, ScreeningStatus,
 )
-from .analysis import PROMPT_VERSION, analyze_transcript
+from .analysis import PROMPT_VERSION, STRUCTURED_ANSWER_FIELDS, analyze_transcript
 from .phone import mask_phone, validate_destination
-from .voice import PROVIDER_NAME, VoiceConfigurationError, VoiceProviderError, get_voice_client
+from .voice import PROVIDER_NAME, VoiceConfigurationError, VoiceProviderError, get_browser_voice_client, get_voice_client
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,21 @@ TWILIO_ACTIVE = {"queued", "initiated", "ringing", "in-progress"}
 
 class ScreeningError(ValueError):
     pass
+
+
+def telephony_enabled():
+    return settings.SCREENING_VOICE_MODE == "telephony"
+
+
+def ai_screening_channel():
+    """The AI voice route for the configured mode: a browser session by default, a phone call in telephony mode."""
+    return ScreeningChannel.AI_VOICE if telephony_enabled() else ScreeningChannel.BROWSER_VOICE
+
+
+TELEPHONY_DISABLED_MESSAGE = (
+    "Telephone screening calls are disabled (SCREENING_VOICE_MODE=browser). "
+    "Use a browser voice session or a human-led screening."
+)
 
 
 def automated_call_blocker(candidate):
@@ -65,10 +83,15 @@ def create_screening(candidate, actor, channel):
     questions = [q for q in (requisition.screening_questions or []) if q.strip()]
     if not questions:
         raise ScreeningError("Add approved screening questions to the requisition before screening.")
-    if channel == ScreeningChannel.AI_VOICE:
+    if script.AVAILABILITY_QUESTION.casefold() not in {q.strip().casefold() for q in questions}:
+        questions.append(script.AVAILABILITY_QUESTION)  # needed for automatic interview scheduling
+    if channel == ScreeningChannel.AI_VOICE and not telephony_enabled():
+        raise ScreeningError(TELEPHONY_DISABLED_MESSAGE)
+    if channel in AI_SCREENING_CHANNELS:
         blocker = automated_call_blocker(candidate)
         if blocker:
             raise ScreeningError(blocker)
+    if channel == ScreeningChannel.AI_VOICE:
         try:
             validate_destination(candidate.phone)
         except ValueError as exc:
@@ -78,8 +101,9 @@ def create_screening(candidate, actor, channel):
             raise ScreeningError("This candidate already has an active screening.")
         screening = Screening.objects.create(
             candidate=candidate, requisition=requisition, channel=channel,
-            status=ScreeningStatus.PENDING_CALL if channel == ScreeningChannel.AI_VOICE else ScreeningStatus.AWAITING_MANUAL_RESULT,
-            questions=questions, script_version=script.SCRIPT_VERSION,
+            status=ScreeningStatus.PENDING_CALL if channel in AI_SCREENING_CHANNELS else ScreeningStatus.AWAITING_MANUAL_RESULT,
+            questions=questions,
+            script_version=script.BROWSER_SCRIPT_VERSION if channel == ScreeningChannel.BROWSER_VOICE else script.SCRIPT_VERSION,
             max_attempts=settings.SCREENING_MAX_CALL_ATTEMPTS, created_by=actor,
         )
         record_event(candidate, actor, EVENT.SCREENING_CREATED, screening_id=str(screening.public_id),
@@ -122,8 +146,12 @@ def place_call(screening, actor, client=None, now=None):
     now = now or timezone.now()
     client = client or get_voice_client()
     candidate = screening.candidate
+    if screening.channel == ScreeningChannel.BROWSER_VOICE:
+        raise ScreeningError("This is a browser voice screening; start it from the browser session page. No phone call is placed.")
     if screening.channel != ScreeningChannel.AI_VOICE:
         raise ScreeningError("This is a human-led screening; no automated call can be placed.")
+    if not telephony_enabled():
+        raise ScreeningError(TELEPHONY_DISABLED_MESSAGE)
     if screening.status != ScreeningStatus.PENDING_CALL:
         raise ScreeningError("This screening is not waiting for a call attempt.")
     if candidate.current_status != CandidateStatus.SCREENING_SCHEDULED_PENDING:
@@ -239,12 +267,20 @@ def run_analysis(screening, actor=None, provider=None, client=None):
         screening.save()
         record_event(screening.candidate, actor, EVENT.SCREENING_ANALYSIS_FAILED, screening_id=str(screening.public_id))
         return screening
+    latest_attempt = screening.call_attempts.order_by("-attempt_number").first()
+    if latest_attempt and latest_attempt.outcome == CallOutcome.INTERRUPTED:
+        # A dropped browser session must never be presented as a normally completed screening.
+        warnings = list(warnings) + [
+            "The browser voice session was interrupted (connection lost or provider failure); the transcript may be incomplete."
+        ]
+        if result["call_outcome"] == CallOutcome.COMPLETED:
+            result["call_outcome"] = CallOutcome.INTERRUPTED
     screening.call_status = result["call_outcome"]
     screening.consent_status = result["consent_status"]
     screening.ai_disclosure_confirmed = result["ai_disclosure_given"]
-    for field in ("question_answer_pairs", "candidate_stated_availability", "role_requirement_responses",
-                  "candidate_questions", "unresolved_questions", "concise_summary",
-                  "recommended_next_step_for_human_review"):
+    for field in ("question_answer_pairs", "role_requirement_responses", "candidate_questions",
+                  "unresolved_questions", "concise_summary", "recommended_next_step_for_human_review",
+                  *STRUCTURED_ANSWER_FIELDS):
         setattr(screening, field, result[field])
     screening.analysis_warnings = warnings
     screening.analysis_provider = "azure_openai"
@@ -264,8 +300,24 @@ def run_analysis(screening, actor=None, provider=None, client=None):
     return screening
 
 
+def normalize_transcript(conversation):
+    """Provider transcript -> [{role, message, time_in_call_secs}], dropping empty turns."""
+    return [
+        {"role": "user" if t.get("role") == "user" else "agent", "message": (t.get("message") or "").strip(),
+         "time_in_call_secs": t.get("time_in_call_secs")}
+        for t in (conversation.get("transcript") or []) if (t.get("message") or "").strip()
+    ]
+
+
 def sync_attempt(attempt, client=None, provider=None, now=None):
     """Fetch provider state for an in-progress call and conclude it once the call has ended. Idempotent."""
+    if attempt.screening.channel == ScreeningChannel.BROWSER_VOICE:
+        # Browser sessions have no Twilio leg; conclude them from the ElevenLabs conversation only.
+        from .browser import conclude_browser_attempt  # local import: browser.py builds on this module
+
+        conclude_browser_attempt(attempt, client=client, provider=provider, now=now)
+        attempt.refresh_from_db()
+        return attempt
     now = now or timezone.now()
     client = client or get_voice_client()
     if attempt.status != CallAttemptStatus.IN_PROGRESS:
@@ -287,11 +339,7 @@ def sync_attempt(attempt, client=None, provider=None, now=None):
     attempt.termination_reason = str(metadata.get("termination_reason") or "")[:255]
     duration = metadata.get("call_duration_secs") or (twilio or {}).get("duration")
     attempt.duration_seconds = int(duration) if str(duration or "").isdigit() else None
-    transcript = [
-        {"role": "user" if t.get("role") == "user" else "agent", "message": (t.get("message") or "").strip(),
-         "time_in_call_secs": t.get("time_in_call_secs")}
-        for t in (conversation.get("transcript") or []) if (t.get("message") or "").strip()
-    ]
+    transcript = normalize_transcript(conversation)
     answered_by = ((twilio or {}).get("answered_by") or "").lower()
     if unanswered is None:
         if answered_by.startswith("machine") or "voicemail" in attempt.termination_reason.lower():
@@ -321,7 +369,9 @@ def sync_attempt(attempt, client=None, provider=None, now=None):
 
 
 def sync_screening(screening, client=None, provider=None):
-    attempt = screening.call_attempts.filter(status=CallAttemptStatus.IN_PROGRESS).order_by("-attempt_number").first()
+    attempt = screening.call_attempts.filter(
+        status__in=(CallAttemptStatus.IN_PROGRESS, CallAttemptStatus.INITIATING),
+    ).order_by("-attempt_number").first()
     if attempt:
         sync_attempt(attempt, client=client, provider=provider)
     screening.refresh_from_db()
@@ -333,7 +383,8 @@ def retry_analysis(screening, actor, provider=None):
     if not claimed:
         raise ScreeningError("Only screenings whose analysis failed can be re-analysed.")
     screening.refresh_from_db()
-    return run_analysis(screening, actor=actor, provider=provider, client=get_voice_client())
+    client = get_browser_voice_client() if screening.channel == ScreeningChannel.BROWSER_VOICE else get_voice_client()
+    return run_analysis(screening, actor=actor, provider=provider, client=client)
 
 
 def record_manual_result(screening, actor, data):
@@ -364,6 +415,13 @@ def record_manual_result(screening, actor, data):
         screening.consent_status = data["consent_status"]
         screening.question_answer_pairs = pairs
         screening.candidate_stated_availability = data.get("candidate_stated_availability", "").strip()
+        # Standard answers noted by the recruiter (no transcript, so there are no verified quotes).
+        low, high = data.get("expected_salary_min"), data.get("expected_salary_max")
+        screening.expected_salary_min, screening.expected_salary_max = (low or high), (high or low)
+        stated = low is not None or high is not None
+        screening.expected_salary_currency = data.get("expected_salary_currency", "").strip().upper() if stated else ""
+        screening.expected_salary_period = data.get("expected_salary_period", "") if stated else ""
+        screening.notice_period = data.get("notice_period", "").strip()
         screening.candidate_questions = data.get("candidate_questions") or []
         screening.unresolved_questions = unresolved
         screening.concise_summary = data["concise_summary"].strip()
@@ -381,7 +439,7 @@ def record_manual_result(screening, actor, data):
 
 def cancel_screening(screening, actor, reason):
     if screening.status in {ScreeningStatus.CALL_IN_PROGRESS, ScreeningStatus.ANALYZING}:
-        raise ScreeningError("A call is in progress. Sync the call result before cancelling.")
+        raise ScreeningError("A call or browser session is in progress. Check its result before cancelling.")
     if screening.status not in {ScreeningStatus.PENDING_CALL, ScreeningStatus.AWAITING_MANUAL_RESULT, ScreeningStatus.ANALYSIS_FAILED}:
         raise ScreeningError("Only pending screenings can be cancelled. Completed screenings are handled in screening review.")
     with transaction.atomic():

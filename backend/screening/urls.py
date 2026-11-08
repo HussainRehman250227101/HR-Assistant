@@ -1,9 +1,9 @@
 from django.urls import path
 
 from .views import (
-    CandidateScreeningListView, ElevenLabsWebhookView, ScreeningAgentConfigView, ScreeningCancelView,
-    ScreeningDetailView, ScreeningManualResultView, ScreeningPlaceCallView, ScreeningQueueView,
-    ScreeningRetryAnalysisView, ScreeningReviewView, ScreeningSyncView,
+    CandidateScreeningListView, ElevenLabsWebhookView, ScreeningAgentConfigView, ScreeningBrowserSessionCompleteView,
+    ScreeningBrowserSessionStartView, ScreeningCancelView, ScreeningDetailView, ScreeningManualResultView,
+    ScreeningPlaceCallView, ScreeningQueueView, ScreeningRetryAnalysisView, ScreeningReviewView, ScreeningSyncView,
 )
 
 app_name = "screening"
@@ -14,6 +14,9 @@ urlpatterns = [
     path("candidates/<uuid:candidate_id>/", CandidateScreeningListView.as_view(), name="candidate-screenings"),
     path("<uuid:public_id>/", ScreeningDetailView.as_view(), name="detail"),
     path("<uuid:public_id>/call/", ScreeningPlaceCallView.as_view(), name="place-call"),
+    path("<uuid:public_id>/browser-session/", ScreeningBrowserSessionStartView.as_view(), name="browser-session-start"),
+    path("<uuid:public_id>/browser-session/complete/", ScreeningBrowserSessionCompleteView.as_view(),
+         name="browser-session-complete"),
     path("<uuid:public_id>/sync/", ScreeningSyncView.as_view(), name="sync"),
     path("<uuid:public_id>/retry-analysis/", ScreeningRetryAnalysisView.as_view(), name="retry-analysis"),
     path("<uuid:public_id>/manual-result/", ScreeningManualResultView.as_view(), name="manual-result"),

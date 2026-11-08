@@ -1,8 +1,8 @@
 import { useMutation, useQuery, useQueryClient, type QueryKey } from '@tanstack/react-query'
 import { api, qs } from '../lib/api'
 import type {
-  AvailabilitySlot, Candidate, CandidateEvent, CommunicationLog, Evaluation, Interview, LocalWindow, Paginated, Requisition, Rubric, Screening,
-  ShortlistQueueItem, ShortlistReview, User, WorkflowRun,
+  AutoScoringStatus, AvailabilitySlot, BrowserSessionComplete, BrowserSessionResult, BrowserSessionStart, Candidate, CandidateEvent, CommunicationLog, Evaluation,
+  Interview, LocalWindow, Paginated, Requisition, Rubric, Screening, ShortlistQueueItem, ShortlistReview, User, WorkflowRun,
 } from '../lib/types'
 
 // Mutations invalidate whole domains so every view of the candidate lifecycle stays consistent.
@@ -91,8 +91,17 @@ export const useResumeAction = () =>
     api(`/candidates/resume-documents/${id}/${action}/`, { method: 'POST' }), LIFECYCLE)
 
 // ---- Scoring / shortlist / workflow ----
-export const useEvaluations = (candidateId: string) =>
-  useQuery({ queryKey: [...keys.candidates, candidateId, 'evaluations'], queryFn: () => api<Evaluation[]>(`/scoring/candidates/${candidateId}/evaluations/`) })
+/** `pollWhileEmpty`: refetch every 20 s until the first evaluation appears (automatic scoring in the background). */
+export const useEvaluations = (candidateId: string, pollWhileEmpty = false) =>
+  useQuery({
+    queryKey: [...keys.candidates, candidateId, 'evaluations'],
+    queryFn: () => api<Evaluation[]>(`/scoring/candidates/${candidateId}/evaluations/`),
+    refetchInterval: pollWhileEmpty ? (query) => (query.state.data?.length ? false : 20_000) : false,
+  })
+
+/** Celery-scheduled automatic scoring: configuration and counts scoped to the viewer's candidates. */
+export const useAutoScoring = () =>
+  useQuery({ queryKey: [...keys.candidates, 'auto-scoring'], queryFn: () => api<AutoScoringStatus>('/workflows/auto-scoring/'), refetchInterval: 60_000 })
 
 export const useStartScoring = () =>
   useApiMutation((candidateId: string) => api<WorkflowRun>(`/workflows/candidates/${candidateId}/start-scoring/`, { method: 'POST' }), LIFECYCLE)
@@ -135,11 +144,33 @@ export const useScreeningAction = () =>
   useApiMutation(({ id, action, body }: { id: string; action: 'call' | 'sync' | 'retry-analysis' | 'cancel' | 'manual-result' | 'review'; body?: unknown }) =>
     api<Screening>(`/screening/${id}/${action}/`, { method: 'POST', body: body ?? {} }), LIFECYCLE)
 
+// ---- Browser voice screening (Module 16): ElevenLabs WebRTC, no phone call ----
+export const useScreening = (id: string | undefined) =>
+  useQuery({ queryKey: [...keys.screening, 'detail', id], queryFn: () => api<Screening>(`/screening/${id}/`), enabled: Boolean(id) })
+
+export const useStartBrowserSession = () =>
+  useApiMutation(({ id }: { id: string }) =>
+    api<BrowserSessionStart>(`/screening/${id}/browser-session/`, { body: { consent_acknowledged: true } }), LIFECYCLE)
+
+/** Asks the backend to fetch the authoritative result from ElevenLabs. Only a concluded session refreshes the lifecycle views. */
+export function useCompleteBrowserSession() {
+  const client = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: BrowserSessionComplete }) =>
+      api<BrowserSessionResult>(`/screening/${id}/browser-session/complete/`, { body }),
+    onSuccess: async (result) => {
+      if (result.session_state !== 'processing') await Promise.all(LIFECYCLE.map((key) => client.invalidateQueries({ queryKey: key })))
+    },
+  })
+}
+
 export interface AgentConfig {
   integration: Record<string, boolean | string | string[]>
+  voice_mode: 'browser' | 'telephony'
   script_version: string
   dynamic_variables: string[]
   calling_policy: Record<string, number | string>
+  browser_policy: { max_attempts: number; session_timeout_minutes: number }
   agent_first_message?: string
   agent_system_prompt?: string
 }
@@ -172,6 +203,7 @@ export interface InterviewPlanInput {
   timezone?: string
   mode?: string
   meeting_link?: string
+  contact_whatsapp?: string
   location?: string
   candidate_availability_note?: string
   candidate_windows?: LocalWindow[]
@@ -179,6 +211,16 @@ export interface InterviewPlanInput {
 
 export const usePlanInterview = (candidateId: string) =>
   useApiMutation((data: InterviewPlanInput) => api<Interview>(`/scheduling/candidates/${candidateId}/interviews/`, { body: data }), LIFECYCLE)
+
+export interface AutoScheduleResult {
+  outcome: 'SCHEDULED' | 'NEEDS_HR' | 'SKIPPED'
+  detail: string
+  interview: Interview | null
+}
+
+/** Run the scheduling agent now (it also runs automatically after HR approves the screening). */
+export const useAutoSchedule = (candidateId: string) =>
+  useApiMutation(() => api<AutoScheduleResult>(`/scheduling/candidates/${candidateId}/interviews/auto/`, { method: 'POST', body: {} }), LIFECYCLE)
 
 export const useInterviewAction = () =>
   useApiMutation(({ id, action, body }: { id: string; action: string; body?: unknown }) =>

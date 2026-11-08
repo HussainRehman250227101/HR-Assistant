@@ -124,7 +124,7 @@ python manage.py test accounts requisitions
 
 Candidate records are linked to an **OPEN** requisition. Candidate identity/contact fields include full name, email, phone, location and LinkedIn URL. Contact and recording consent both start as **PENDING**; creating a record never assumes consent. Candidate status uses the lifecycle names in the project brief and is read-only through the intake API. Later workflow modules own human-approved progression.
 
-Batch resume intake creates placeholder candidates with `identity_review_required=true`; it never fabricates names or email addresses from filenames.
+Batch resume intake creates placeholder candidates with `identity_review_required=true`; it never fabricates names or email addresses from filenames. Their details are read from the resume itself after extraction (see [Candidate details from the resume](#candidate-details-from-the-resume-and-one-click-approvals)).
 
 Access:
 - HR Administrator and Recruiter: create, update and view candidate records.
@@ -342,19 +342,22 @@ npm install
 npm run dev            # http://localhost:5173 ; /api is proxied to http://127.0.0.1:8000
 npm run build          # type-check + production build
 npm run lint
+npm test               # Vitest + Testing Library (jsdom)
 ```
 
 Sign in with a Django user (`python manage.py createsuperuser`, then set `role` in the admin). JWTs are kept in `localStorage` (prototype trade-off; move to httpOnly cookies before production). Set `VITE_API_PROXY_TARGET` to proxy to a different backend.
 
-Screens: requisitions (create/edit/open/hold/close, rubric weights, batch resume upload), candidates (details, consent, resumes, extraction, scoring, shortlist decision, screening, activity history), shortlist queue, screening queue and integration status.
+Screens: requisitions (create/edit/open/hold/close, rubric weights, batch resume upload), candidates (details, consent, resumes, extraction, scoring, shortlist decision, screening, activity history), shortlist queue, screening queue (including the Module 16 demo browser voice screening page) and integration status.
 
 ## Module 10 — Candidate Screening Call Agent (Twilio + ElevenLabs)
+
+> **Optional since Module 16.** The default AI screening route is now the browser voice session (see [Module 16](#module-16--browser-voice-screening-elevenlabs-webrtc)). Everything in this section applies only with `SCREENING_VOICE_MODE=telephony`; in the default browser mode, no Twilio call is placed and no Twilio setting is needed.
 
 ElevenLabs Conversational AI places outbound calls through its **native Twilio integration** (`POST /v1/convai/twilio/outbound-call`) using the Twilio number imported into ElevenLabs. Twilio's REST API is queried for the authoritative call status (no-answer, busy, failed). Post-call results arrive by an HMAC-signed ElevenLabs webhook, with polling as a fallback. Azure GPT-5 mini turns the transcript into the SRS §8 output fields. Every quoted candidate statement is verified against the transcript, and unverifiable quotes are downgraded to `UNCLEAR`.
 
 Safeguards:
 - Only candidates in `APPROVED_FOR_SCREENING` can be screened.
-- The agent uses only the requisition's approved questions and the versioned script `screening-call-v1`.
+- The agent uses only the requisition's approved questions and the versioned script `screening-call-v1` (now `screening-call-v2`, which adds the standard salary, notice-period and availability questions; see "Screening: salary, notice period and interview availability" below).
 - Destinations are limited to `SCREENING_ALLOWED_DIAL_PREFIXES` (default `+92`, validated as `+92` plus 10 digits).
 - Calls are allowed only inside a calling window (09:00–19:00 Asia/Karachi by default).
 - At most `SCREENING_MAX_CALL_ATTEMPTS` attempts are made, with a minimum `SCREENING_RETRY_INTERVAL_MINUTES` between them.
@@ -505,15 +508,15 @@ The needs attention list covers:
 - Startup fails without a unique `SECRET_KEY` and `ALLOWED_HOSTS`.
 - Secure cookies and SSL redirect are on; `USE_X_FORWARDED_PROTO` is optional for a TLS proxy.
 - JWT access tokens last 15 minutes and refresh tokens 12 hours; the SPA refreshes automatically.
-- If ElevenLabs is configured, `ELEVENLABS_WEBHOOK_SECRET` is required.
+- In telephony mode (`SCREENING_VOICE_MODE=telephony`) with ElevenLabs configured, `ELEVENLABS_WEBHOOK_SECRET` is required. Browser mode (the default) needs no webhook.
 - A console email backend triggers a warning.
 - `python manage.py check --deploy` reports only the HSTS subdomain/preload options. Set those for your domain.
 
 **Frontend:** a global error boundary; admin-only **Erase personal data** and recruiter **Close candidate** actions on the candidate page.
 
 **QA:**
-- `dashboard/test_end_to_end.py` drives the complete AC-11 flow through the REST API with synthetic data: requisition → DOCX resume upload → extraction → LangGraph scoring → shortlist approval → AI screening call → transcript analysis → screening approval → availability → slot proposal and confirmation → invitation draft → approval → send (and the duplicate send is refused). Only Azure, ElevenLabs/Twilio and SMTP are faked.
-- The full backend suite is 82 tests: `python manage.py test accounts requisitions candidates llm scoring reviews workflows screening scheduling communications dashboard audit`.
+- `dashboard/test_end_to_end.py` drives the complete AC-11 flow through the REST API with synthetic data: requisition → DOCX resume upload → extraction → LangGraph scoring → shortlist approval → AI screening call → transcript analysis → screening approval → availability → slot proposal and confirmation → invitation draft → approval → send (and the duplicate send is refused). Only Azure, ElevenLabs/Twilio and SMTP are faked. This test runs in telephony mode. The browser-session flow through HR approval is covered by `screening/test_browser_voice.py`.
+- The full backend suite is 138 tests (Module 16 added 20, automatic scoring 14, resume details 12, standard screening answers 10): `python manage.py test accounts requisitions candidates llm scoring reviews workflows screening scheduling communications dashboard audit`.
 
 ### Acceptance criteria status (SRS §15)
 
@@ -521,7 +524,7 @@ The needs attention list covers:
 |---|---|---|
 | AC-01–AC-03 | Met | Requisitions, resume intake/extraction, evidence-based scoring (Modules 03–07) |
 | AC-04 | Met | Shortlist gate; nothing is contacted from a score alone |
-| AC-05 | Met in code; live call not verified | Approved script, consent, escalation, retry limits (Module 10). Needs a live ElevenLabs/Twilio test |
+| AC-05 | Met in code; live session not verified | Approved scripts, consent, escalation, attempt limits (Modules 10, 16). Browser mode needs only ElevenLabs credentials for a live demo; telephony needs Twilio too |
 | AC-06 | Met | Verified candidate statements kept separate from AI interpretation; HR review (Module 11) |
 | AC-07 | Met (internal calendar) | Mutual availability, time zones, confirmation of both parties (Module 12) |
 | AC-08 | Met | Invitation only after recorded approval; idempotent send (Module 13) |
@@ -531,10 +534,258 @@ The needs attention list covers:
 | AC-12 | Met | This README |
 
 **Not done / external:**
-- Live Twilio/ElevenLabs calls and SMTP delivery need credentials and a public webhook URL.
+- A live ElevenLabs browser session needs ElevenLabs credentials. Live Twilio calls (optional telephony mode) and SMTP delivery need credentials, and telephony also needs a public webhook URL.
 - No Google/Microsoft calendar integration (the internal calendar is labelled as such).
 - No OCR.
 - SQLite remains the database.
 - No measured performance benchmark against live Azure.
-- No frontend unit tests.
+- Frontend unit tests cover only the browser voice session component (Module 16).
 - JWTs are stored in `localStorage`.
+
+
+## Module 16 — Browser Voice Screening (ElevenLabs WebRTC)
+
+AI screening no longer needs a telephone. With `SCREENING_VOICE_MODE=browser` (the default), the ElevenLabs agent talks to the candidate inside the HR app over WebRTC, using the official `@elevenlabs/react` SDK. Twilio is used only when `SCREENING_VOICE_MODE=telephony` ([Module 10](#module-10--candidate-screening-call-agent-twilio--elevenlabs)). There is no candidate portal yet, so the session runs in the HR workspace as a clearly labelled **Demo browser screening** ("Simulated candidate · no phone call"). It is never shown as a phone call.
+
+### How it works
+
+1. **Create.** On the candidate's **Screening** tab (candidate in `APPROVED_FOR_SCREENING`), a recruiter chooses **Demo browser voice screening**. This creates a `BROWSER_VOICE` screening (script `screening-browser-v2`); the candidate moves to `SCREENING_SCHEDULED_PENDING`. No phone number is needed or used.
+2. **Consent.** The page `/screening/<screening_uuid>/browser` shows the candidate and requisition, the approved questions and the disclosure: an AI voice agent will ask the questions, voice is processed by ElevenLabs, the transcript is kept for HR review, and a microphone is required. **Start Interview** stays disabled until the consent box is ticked. The session never starts by itself.
+3. **Start.** The browser checks microphone permission and then calls `POST /api/v1/screening/<uuid>/browser-session/` with `{"consent_acknowledged": true}`. The backend:
+   - checks the role (recruiter/admin), visibility, channel, screening and candidate status, the open requisition, opt-out/consent blockers and the attempt limit;
+   - atomically claims one attempt (`ScreeningCallAttempt`, provider `elevenlabs_webrtc`), so double clicks cannot start two sessions;
+   - requests a single-use conversation token with `GET https://api.elevenlabs.io/v1/convai/conversation/token?agent_id=<ELEVENLABS_AGENT_ID>` and the server-side `xi-api-key` header;
+   - returns only `screening_id`, `attempt_id`, `conversation_id`, `conversation_token`, `connection_type: "webrtc"` and the script's dynamic variables (candidate **first name** only, role title, organisation, approved questions, human contact). The API key and agent ID never reach the browser, and no resume, email or phone number is sent to ElevenLabs.
+4. **Talk.** The SDK connects with `startSession({ conversationToken, connectionType: "webrtc", dynamicVariables })`. The page shows Connecting, Agent speaking, Listening, Muted and Disconnected states, with **Mute** and **End Interview** buttons. Leaving the page during a live session triggers a browser warning.
+5. **Complete.** When the session ends (button, agent hang-up, connection loss or a start failure), the browser calls `POST /api/v1/screening/<uuid>/browser-session/complete/` with `attempt_id`, `client_end_reason` and `connected`. **It never sends a transcript.** The backend fetches `GET /v1/convai/conversations/{conversation_id}` from ElevenLabs:
+   - `initiated` / `in-progress` / `processing` → `202` with `session_state: "processing"`; the page polls every few seconds and offers **Check result again** if ElevenLabs is slow.
+   - `done` with candidate speech → outcome `COMPLETED`; the transcript is stored and Azure analysis runs (quotes are verified against the transcript).
+   - `failed`, or a connection loss after the candidate spoke → `INTERRUPTED`. It is never shown as completed, and analysis adds a warning.
+   - The session never connected or the candidate never spoke → `ABANDONED` (or `FAILED` if the browser reported a start/connection error).
+   - Unsuccessful sessions return the screening to `PENDING_CALL` for another attempt, or escalate to human follow-up once `SCREENING_MAX_CALL_ATTEMPTS` is used.
+   - Completing twice is safe: a conditional update makes the first call win, and the second returns the stored result.
+6. **HR review.** The analysed session lands in `AWAITING_HR_REVIEW` (candidate `SCREENING_COMPLETED_HR_REVIEW`), the same queue and gate as Module 11. The result also distinguishes `INCOMPLETE` (from the analysis). Nothing is approved or rejected automatically.
+
+Recovery:
+- If the page is closed mid-session, the candidate's Screening tab and the browser page show **Check session result** (`POST <uuid>/sync/`), which concludes the session from ElevenLabs.
+- A session that never connected, or whose page was closed before it connected, is released after `SCREENING_BROWSER_SESSION_TIMEOUT_MINUTES` (default 15).
+- `sync_screening_calls` and the webhook also conclude browser sessions, but neither is required in browser mode.
+
+Every step writes `CandidateEvent`s: `SCREENING_BROWSER_SESSION_STARTED`, `SCREENING_BROWSER_SESSION_FAILED`, `SCREENING_BROWSER_SESSION_ENDED`, plus the existing status-change and analysis events.
+
+### Endpoints (`/api/v1/screening/`, recruiter/admin)
+
+| Method | Path | Purpose |
+|---|---|---|
+| POST | `candidates/<candidate_uuid>/` | Create a screening; `channel` defaults to `BROWSER_VOICE` in browser mode (`AI_VOICE` is refused unless telephony mode) |
+| POST | `<screening_uuid>/browser-session/` | Start a session: `{consent_acknowledged: true}` → `201` with the token and IDs (`Cache-Control: no-store`) |
+| POST | `<screening_uuid>/browser-session/complete/` | Conclude: `{attempt_id?, client_end_reason, connected?, conversation_id?}` → `200` concluded, or `202` still processing |
+| POST | `<screening_uuid>/sync/` | Recover a session whose page was closed |
+| GET | `agent-config/` | Voice mode, readiness booleans, browser policy and, for admins, the active script to paste into ElevenLabs |
+
+Errors: `503` if ElevenLabs is not configured (no attempt is used), `502` if ElevenLabs is unreachable or rejects the request. A `502` on completion loses nothing; try again shortly.
+
+### Environment variables
+
+| Variable | Browser mode | Notes |
+|---|---|---|
+| `SCREENING_VOICE_MODE` | `browser` | `browser` (default) or `telephony` |
+| `ELEVENLABS_API_KEY` | Required | Server-side only |
+| `ELEVENLABS_AGENT_ID` | Required | Server-side only; the frontend never hardcodes it |
+| `SCREENING_BROWSER_SESSION_TIMEOUT_MINUTES` | Optional | Default 15 |
+| `ELEVENLABS_API_BASE_URL`, `VOICE_PROVIDER_TIMEOUT_SECONDS`, `SCREENING_MAX_CALL_ATTEMPTS`, `SCREENING_ORGANIZATION_NAME`, `SCREENING_HUMAN_CONTACT` | Optional | Shared with telephony mode |
+
+**Not needed in browser mode** (leave empty): `TELEPHONY_PROVIDER`, `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`, `ELEVENLABS_AGENT_PHONE_NUMBER_ID`, `ELEVENLABS_WEBHOOK_SECRET`, `SCREENING_ALLOWED_DIAL_PREFIXES`, `SCREENING_RETRY_INTERVAL_MINUTES`, `SCREENING_CALL_TIMEZONE`, `SCREENING_CALL_WINDOW_START_HOUR`, `SCREENING_CALL_WINDOW_END_HOUR`. The production settings no longer require the webhook secret in browser mode. Existing phone-call records are kept and still display.
+
+### ElevenLabs agent setup (manual, in the ElevenLabs dashboard)
+
+1. **Create the agent.** Go to **ElevenLabs Agents** (Conversational AI) and create a blank agent.
+2. **Script.** In the HR app, open **Integrations** as an admin and copy the **browser** first message and system prompt (also available from `GET /api/v1/screening/agent-config/`). Paste them into the agent's *First message* and *System prompt*. Keep the `{{...}}` placeholders: they are dynamic variables filled per session (`candidate_name`, `role_title`, `organization_name`, `screening_questions`, `question_count`, `human_contact`).
+3. **End call tool.** Enable the built-in **End call** system tool so the agent can close the session when the candidate declines, asks for a human or finishes.
+4. **Agent ID.** Copy the agent ID (`agent_...`) from the agent's page or URL into `ELEVENLABS_AGENT_ID` in `backend/.env`.
+5. **Authentication.** In the agent's **Security** settings, enable **authentication**. The agent then accepts only sessions started with a token issued by our backend, so a copied agent ID cannot be used to start sessions. If you also use the host allowlist, add the host you open the app on (for example `localhost:5173`).
+6. **API key.** Under your profile → **API keys**, create a key with access to ElevenLabs Agents. The backend uses it to request tokens, read conversations and, if a candidate declines consent, delete the conversation. Put it in `ELEVENLABS_API_KEY` in `backend/.env`. Never put it in frontend code or `.env` files under `frontend/`.
+7. **Privacy and retention.** Review the agent's privacy and retention settings yourself. The backend fetches the transcript from ElevenLabs after each session, so the transcript must stay retrievable until then (a zero-retention mode would leave HR with no transcript). This app does not verify or control how long ElevenLabs keeps audio, and the disclosure does not claim it is deleted.
+
+Restart `runserver` after editing `.env`. **Integrations** should then show *Browser voice sessions: Ready*.
+
+### Testing the microphone locally
+
+- Open the app at `http://localhost:5173`. Browsers allow microphone access only on secure contexts, and `localhost` counts as one. A LAN IP over plain HTTP will not work.
+- The first **Start Interview** triggers the browser's permission prompt. If you denied it, the page explains how to fix it: allow the microphone in the site settings (the icon in the address bar) and try again. A missing or busy microphone gets its own message.
+- Use headphones to stop the agent hearing itself.
+
+### Running the tests
+
+```powershell
+# backend/ (ElevenLabs HTTP is mocked; no network, no billing)
+python manage.py test screening.test_browser_voice
+# frontend/ (the ElevenLabs SDK and the API are mocked)
+npm test
+```
+
+Neither suite contacts ElevenLabs. A real session, real microphone audio and the actual ElevenLabs dashboard behaviour can only be verified manually with credentials.
+
+
+## Automatic resume scoring (Celery worker)
+
+New resumes no longer wait for someone to click **Score resume**. A Celery beat scheduler enqueues a scoring cycle every `AUTO_SCORING_INTERVAL_SECONDS` (default 120). The worker then:
+
+1. **Extracts** resumes still waiting for text extraction (the same service as `process_pending_resumes`).
+2. **Releases** scoring runs stuck in `PENDING`/`RUNNING` for over 15 minutes (for example, the worker was killed mid-run). They become `FAILED` with `WORKFLOW_STALE`, so HR can re-score.
+3. **Scores** every new resume through the existing LangGraph workflow (`score_resume → wait_for_hr_review`), up to `AUTO_SCORING_BATCH_LIMIT` per cycle. A resume is new when its candidate is in `RESUME_RECEIVED`, the requisition is `OPEN`, and the latest extracted resume has never had a workflow run.
+
+Rules:
+- **The human gate is unchanged.** Automatic scoring moves a candidate only to `SCORED_HR_REVIEW` (or `NEEDS_MANUAL_REVIEW`), exactly like the button. It never approves, declines or contacts anyone.
+- **Each resume is scored automatically once.** If that run fails (Azure down, bad configuration), it is left `FAILED` for HR to retry with **Score resume**, so an outage can't cause a billed call every 2 minutes.
+- **No duplicates.** A database constraint allows one active workflow run per candidate, so the worker and a recruiter (or two workers) can't score the same candidate twice.
+- **Audit.** Automatic runs have `trigger=AUTOMATIC` and no `created_by`. The `WORKFLOW_STARTED`/`WORKFLOW_FAILED` candidate events carry the trigger. Manual runs are `trigger=MANUAL`.
+- Every automatic run is a live, billed Azure OpenAI call. Set `AUTO_SCORING_ENABLED=False` to turn it off.
+
+### Running it (Windows, from `backend/`, venv active, three terminals)
+
+```powershell
+python manage.py runserver
+celery -A config worker --pool=solo --loglevel=info   # Windows needs the solo pool
+celery -A config beat --loglevel=info                 # the scheduler; on Windows it can't be combined with the worker (-B)
+```
+
+Without Celery, `python manage.py auto_score_resumes [--limit N]` runs one cycle immediately (same code). After fixing an outage or a configuration error, `python manage.py auto_score_resumes --retry-failed` also re-scores resumes whose earlier runs all failed. The failed runs stay in the audit trail.
+
+Restart the worker after changing `backend/.env`. Settings such as the Azure endpoint are read once, when the worker starts.
+
+**Azure endpoint:** `AZURE_OPENAI_ENDPOINT` must be only the resource URL, for example `https://<resource>.services.ai.azure.com` or `https://<resource>.openai.azure.com`. Don't paste a full target URL such as `.../openai/v1/responses`; the app appends `/openai/v1` itself, and the extra path causes a 404 on every scoring call.
+
+**Broker:** by default, the queue is a local SQLite file (`backend/celery-broker.sqlite3`, through SQLAlchemy), so no extra service is needed. For production, use Redis: `pip install redis` and set `CELERY_BROKER_URL=redis://localhost:6379/0`. On this machine, Redis can run in Docker (`docker run -d -p 6379:6379 redis:7`). Task results are not stored. The broker file and `celerybeat-schedule` are git-ignored.
+
+### Settings (`backend/.env`)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `AUTO_SCORING_ENABLED` | `True` | Turn the scheduled scoring on or off |
+| `AUTO_SCORING_INTERVAL_SECONDS` | `120` | How often beat enqueues a cycle (minimum 30) |
+| `AUTO_SCORING_BATCH_LIMIT` | `10` | Maximum resumes scored (and extracted) per cycle |
+| `CELERY_BROKER_URL` | empty = SQLite file | Message broker URL |
+
+### API and UI
+
+- `GET /api/v1/workflows/auto-scoring/` (any signed-in user) returns `enabled`, `interval_seconds`, `batch_limit`, `awaiting_scoring` and `last_automatic_run_at`. The counts are scoped to the candidates the user can see.
+- Workflow runs now include `trigger` (`MANUAL` or `AUTOMATIC`).
+- **Integrations** shows an *Automatic resume scoring — Celery* card: status, interval, resumes waiting and the last automatic run.
+- On a candidate's **Scoring & shortlist** tab, an unscored resume shows that automatic scoring is on. The tab refreshes itself when the score arrives. **Score resume** still scores immediately.
+
+Tests: `python manage.py test workflows` (Azure is mocked; the Celery task is run with `.apply()`, so no broker is needed).
+
+
+## Automatic interview scheduling (Agent 3)
+
+**What it does.** When HR approves a screening, the scheduling agent matches the candidate's stated availability with an interviewer's calendar and emails the invitation, with no further clicks.
+
+1. **Interview format (per requisition).** The requisition form has an *Interview* section: **On-site** (the requisition *Location* is the address, so it is required) or **Video call (WhatsApp)** (a WhatsApp number with country code is required, e.g. `+923001234567`). API fields: `interview_format` (`ONSITE`/`VIDEO`), `interview_whatsapp_number`.
+2. **Candidate availability.** Every screening ends with the standard question *"Which days and times in the next two weeks would suit you for an interview, and in which time zone?"* (added automatically to the approved questions). The answer is read into windows by Azure (only that text is sent; dates, times and zones are validated in code; unknown zones fall back to `SCHEDULING_DEFAULT_TIMEZONE`).
+3. **Matching.** Interviewers are active users with future availability slots (*Interviews → availability*). The requisition's hiring manager is tried first, then the least-booked others. The earliest slot inside both the candidate's windows and the interviewer's free time (minus booked interviews) is booked.
+4. **Email.** Template `interview-email-v3`: on-site → address and date/time; video → *WhatsApp video call on +92…* and date/time; plus an ICS attachment. The interviewer is cc'd.
+5. **Safeguards.** No availability, no overlap, no interviewer calendar, a missing email/location/WhatsApp number or a send failure leave the candidate with HR (reason shown on the candidate's Interview tab, "Needs attention" on the dashboard); the invitation is never reported as sent. One active interview per candidate and one sent message per interview/kind/sequence keep retries from duplicating anything.
+
+**Human gate.** HR's screening approval is the gate; there is no separate send approval (SRS FR-11 asked for one; this is a user decision of 2026-11-08). Messages are marked `auto_sent`, events carry `automatic=true`. Set `INTERVIEW_AUTO_SCHEDULING_ENABLED=false` to go back to draft → HR approves → send.
+
+**Run it.** Celery worker and beat must run (see *Automatic resume scoring*): the approval queues the task immediately and beat sweeps every `AUTO_SCORING_INTERVAL_SECONDS`. `POST /api/v1/scheduling/candidates/<uuid>/interviews/auto/` (recruiter/admin; the **Run scheduling agent now** button) re-runs it after HR fixes something.
+
+**Env.** `INTERVIEW_AUTO_SCHEDULING_ENABLED` (default true), `SCHEDULING_DEFAULT_TIMEZONE` (default `Asia/Karachi`), `SCHEDULING_DEFAULT_DURATION_MINUTES` (45). Dev email goes to the console backend; set `EMAIL_BACKEND`/`EMAIL_HOST*` for real delivery.
+
+**Verify.** `python manage.py test scheduling.test_auto_schedule` (fake Azure and email).
+
+## Declined candidates: friendly rejection and automatic deletion
+
+When HR **declines** a candidate (shortlist review or screening review) the system, without further clicks:
+
+1. closes the candidate and records a `REJECTION_PENDING` marker;
+2. emails a friendly rejection notice (template `rejection-email-v1`). It thanks the candidate, says the application will not move forward, and states that their resume, contact details, screening answers and evaluation notes were deleted from the HR system. It does not give HR's reason, any score, or mention that the name is kept;
+3. **after the email backend accepts it**, erases the candidate's data with `erase_personal_data(keep_name=True)`. Resume files and text, contact details, evidence excerpts, transcripts and answers, and email bodies are removed; the **name**, statuses, decisions, timestamps and model versions stay so HR can tell who was declined.
+
+Safeguards: a send failure keeps the data and retries (beat sweep, `REJECTION_MAX_EMAIL_ATTEMPTS`, default 5; the dashboard shows failed emails); a candidate without an email is erased immediately; the email goes out at most once; a running scoring workflow delays the deletion; candidates closed manually or declined before this feature are never touched. The decline forms warn that the action cannot be undone and ask for confirmation.
+
+Env: `REJECTION_AUTO_ENABLED` (default true), `REJECTION_MAX_EMAIL_ATTEMPTS` (5). Celery worker and beat must run. Verify: `python manage.py test candidates.test_decline`.
+
+## Candidate details from the resume and one-click approvals
+
+HR no longer types in a candidate's name or contact details. The two selection steps are a single **Approve this candidate** button.
+
+### Details are read from the resume (SRS §4.1)
+
+Right after a resume's text is extracted, and before it is scored, `candidates/services/contact_details.py` fills the candidate's **empty** fields:
+
+| Field | How |
+|---|---|
+| Email, phone, LinkedIn URL | Local pattern matching, with no AI call. The top of the resume is used first. Further down, a value is used only if it is the only one in the document, so a referee's email or phone isn't taken. |
+| Name, location | Azure OpenAI reads only the first 2,500 characters. A value is kept only if it appears word for word in the resume (SRS §14: nothing is invented). Without Azure, the name comes from the first line that looks like a name, and the location stays empty. |
+
+Rules:
+- Values a recruiter entered are never overwritten. Fields filled this way show a *from resume* tag on the candidate page. Editing a field removes its tag.
+- The "Contact details missing" flag (`identity_review_required`) clears automatically once an email or phone is found. It stays on only when the resume has no contact details, or when the email already belongs to another applicant for the same job (likely the same person applying twice). Only in those cases does HR add details with **Edit details**.
+- Every fill writes a `CANDIDATE_DETAILS_FROM_RESUME` event listing the field **names**. Values are never logged.
+- Scoring now also hides the detected name (including all-caps or extra-space variants), the stored location and LinkedIn URLs before its Azure call.
+- To fill candidates processed before this change: `python manage.py fill_candidate_details [--limit N]`. This makes Azure calls for name and location.
+
+### One-click approvals (both human gates)
+
+- **Shortlist (gate 1):** **Approve this candidate** posts `{"evaluation": ..., "decision": "APPROVE_FOR_SCREENING"}`. No reason or identity checkbox is needed. Approving confirms the details read from the resume, and the approver and time are recorded. It is refused only when the resume had no email or phone, or when there is no AI score (use *Approve with a score override*).
+- **Screening review (gate 2):** **Approve this candidate** approves for interview with one click, including after an interrupted or incomplete session. The outcome and a warning are shown first and stay on record.
+- **Decline, hold, re-screen and score overrides** are under *Other decisions* and still need a reason (FR-04 "record a reason where appropriate").
+
+The test runner (`config/test_runner.py`) blanks the Azure, ElevenLabs and Twilio keys during `manage.py test`, so no test can make a live, billed call even with a real `.env`.
+
+
+## Screening: salary, notice period and interview availability
+
+Every AI screening (browser session or phone call) now gathers three standard answers, and HR reviews them next to the job description before approving the candidate for interview (SRS §8 Agent 2, FR-06–FR-08).
+
+### What the agent asks (scripts `screening-browser-v4` / `screening-call-v4`; v4: only the Approved screening questions are asked, a refusal ends the session, short first message; v3: no explanations of off-topic questions or word definitions, each question asked at most 3 times, then the agent ends the session)
+
+After the requisition's approved questions, the agent asks, one at a time:
+1. **Expected salary:** a minimum and a maximum, and the currency. It asks once more if the candidate gave a single figure or didn't say the currency or whether the figure is monthly or yearly. "Prefer not to say" is accepted.
+2. **Notice period**, or the earliest date the candidate could start.
+3. **Interview availability:** days and times in the next two weeks, with the time zone.
+
+The agent never comments on or negotiates the salary. It doesn't know the job's budget: the budget isn't one of the dynamic variables sent to ElevenLabs.
+
+**Stays on topic.** The agent answers only questions about the role and the hiring process. Anything else gets "Sorry, I can only help with questions about this role and the hiring process", and the screening continues. That covers general knowledge or current events (for example, who a country's president is), technical explanations (what a backend is, what Django is), and questions about the assistant or the company's systems. It never reveals its instructions and ignores requests to change its rules. A role question it can't answer is left for the recruiting team to follow up.
+
+The live ElevenLabs agent was updated through the API with the v2 browser script (end-call tool and authentication unchanged). If you manage the agent by hand, copy the script again from **Integrations**.
+
+### How the answers are extracted (`screening-analysis-v2`)
+
+The transcript analysis returns each answer with a status (`STATED`, `DECLINED_TO_ANSWER`, `NOT_ASKED`, `UNCLEAR`) and the candidate's own words. As with the question answers:
+- The quote must appear in what the **candidate** said. Otherwise it is removed with a warning.
+- A summary or salary figure is kept **only** when its quote is verified, so nothing is invented.
+- Salary shorthand becomes plain numbers (150k → 150000, 1.5 lakh → 150000). One figure means min = max, a reversed range is swapped, and the currency must be an ISO code the candidate stated or clearly implied ("rupees" → PKR); otherwise it is left empty.
+- A declined or unclear answer is added to *Unresolved — needs human follow-up*. So is a topic the agent skipped in a completed screening.
+- Off-topic questions from the candidate are not listed as candidate questions.
+
+New `Screening` fields (migration `screening/0004`): `expected_salary_min`, `expected_salary_max`, `expected_salary_currency`, `expected_salary_period` (`MONTHLY`/`ANNUAL`/`UNSPECIFIED`), `expected_salary_statement`, `notice_period`, `notice_period_statement`, `availability_statement`. `candidate_stated_availability` keeps the availability summary. Personal-data erasure clears all of them.
+
+### API and UI
+
+- `GET /api/v1/screening/<id>/` and the screening queue now include those fields and a read-only `job` object for the requisition: `description`, `responsibilities`, required and preferred skills, minimum experience, education, location, work mode, employment type, and `salary_min`/`salary_max`/`currency`. Access rules are unchanged; hiring managers see only their own requisitions.
+- The screening review (the **Screening** queue's *Review* row and the candidate's **Screening** tab) shows:
+  - *Salary, notice period and interview availability* cards, each with the candidate's quote;
+  - a **Job description** panel with the job's salary budget next to the candidate's expected salary, plus the skills, location, work mode and full description.
+  
+  The comparison is shown, not computed. The requisition has no pay period, so the app doesn't label a candidate "within budget"; HR decides.
+- The human-led result form has optional salary (from, to, currency, per month or year), notice-period and interview-availability fields. A range whose minimum exceeds its maximum is refused.
+
+Tests: `python manage.py test screening.test_structured_answers` (Azure and ElevenLabs are faked).
+
+### My Schedule page (`/my-schedule`)
+
+Any signed-in user who interviews (admin, recruiter, hiring manager) can open **My Schedule** to add the dates and times they are free (`POST /api/v1/scheduling/availability/`, `interviewer` = themselves) and to see the interviews assigned to them (`GET /api/v1/scheduling/interviews/?mine=1[&status=ACTIVE|SCHEDULED|CANCELLED]`). Availability can be listed per person with `?interviewer=<id>`. The admin "Interviews & Availability" page is unchanged: admins can still add availability for any user, including recruiters. Dates are DD/MM/YYYY. Tests: `python manage.py test scheduling.test_my_schedule`, `npm test`.
+
+### Roles and access (2026-11-08)
+
+| Role | Access |
+|---|---|
+| HR Administrator | Everything (plus administrator-only items: AI test endpoint, erase personal data, agent prompt view). Can also be an interviewer. |
+| Hiring Manager | Full access to all requisitions, candidates, reviews, scheduling and communications. Can also be an interviewer. |
+| HR Recruiter | Interviewer only: sees just the candidates with an interview assigned to them (plus their requisitions and the interview), adds and removes only their own availability on **My Schedule**, and cannot create, edit, review or send anything. |
+
+Backend: `accounts.permissions.has_full_access` / `IsHRStaff`; `candidates_visible_to`, `interviews_visible_to`. Frontend: `useAuth().hasFullAccess`.

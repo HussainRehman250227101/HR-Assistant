@@ -66,7 +66,7 @@ function RubricCard({ reference }: { reference: string }) {
 export function RequisitionDetailPage() {
   const { ref } = useParams()
   const navigate = useNavigate()
-  const { isRecruiter } = useAuth()
+  const { hasFullAccess } = useAuth()
   const requisition = useRequisition(ref)
   const candidates = useCandidates({ requisition: ref, page_size: 100 })
   const save = useSaveRequisition()
@@ -86,7 +86,7 @@ export function RequisitionDetailPage() {
       <PageHeader
         title={<span className="flex items-center gap-3">{r.title} <Badge value={r.status} /></span>}
         subtitle={`${r.department} · ${r.location || 'No location'} · ${r.work_mode.toLowerCase()} · ref ${r.reference_code.slice(0, 8)}`}
-        actions={isRecruiter && (
+        actions={hasFullAccess && (
           <>
             {TRANSITIONS[r.status].map((t) => (
               <Button key={t.to} variant={t.variant} loading={save.isPending && save.variables?.data.status === t.to}
@@ -106,6 +106,7 @@ export function RequisitionDetailPage() {
         <Card title="Details">
           <KeyValue items={[
             ['Hiring manager', r.hiring_manager_name],
+            ['Interview format', r.interview_format === 'VIDEO' ? `Video call on WhatsApp ${r.interview_whatsapp_number}` : `On-site${r.location ? ` at ${r.location}` : ''}`],
             ['Employment type', r.employment_type.replace('_', ' ').toLowerCase()],
             ['Minimum experience', `${r.minimum_experience_years} years`],
             ['Education', r.education_requirements],
@@ -123,10 +124,10 @@ export function RequisitionDetailPage() {
             <ol className="list-decimal space-y-1 pl-5 text-sm">{r.screening_questions.map((q) => <li key={q}>{q}</li>)}</ol>
           ) : <Alert tone="warning">No screening questions yet. Screening calls require approved questions.</Alert>}
         </Card>
-        {isRecruiter && <RubricCard reference={r.reference_code} />}
+        {hasFullAccess && <RubricCard reference={r.reference_code} />}
         <Card
           title={`Candidates (${candidates.data?.count ?? 0})`}
-          actions={isRecruiter && r.status === 'OPEN' && (
+          actions={hasFullAccess && r.status === 'OPEN' && (
             <>
               <Button size="sm" onClick={() => setAddOpen(true)}>Add candidate</Button>
               <Button size="sm" variant="secondary" onClick={() => { setUploadOpen(true); setUploadResult(null) }}>Batch upload resumes</Button>
@@ -140,7 +141,7 @@ export function RequisitionDetailPage() {
                 <tr key={c.public_id} className="hover:bg-slate-50">
                   <Td>
                     <Link to={`/candidates/${c.public_id}`} className="font-medium text-indigo-700 hover:underline">{c.display_name}</Link>
-                    {c.identity_review_required && <span className="ml-2"><Badge tone="amber" label="Identity review" /></span>}
+                    {c.identity_review_required && <span className="ml-2"><Badge tone="amber" label="Contact details missing" /></span>}
                   </Td>
                   <Td><Badge value={c.current_status} /></Td>
                   <Td>{c.resume_documents.length}</Td>

@@ -60,6 +60,8 @@ class Candidate(models.Model):
     consent_preferences = models.JSONField(default=dict, blank=True)
     current_status = models.CharField(max_length=40, choices=CandidateStatus.choices, default=CandidateStatus.RESUME_RECEIVED, db_index=True)
     identity_review_required = models.BooleanField(default=False)
+    # Names of the fields filled automatically from the candidate's own resume (never values; see services/contact_details.py).
+    auto_filled_fields = models.JSONField(default=list, blank=True)
     closed_reason = models.TextField(blank=True)
     personal_data_erased_at = models.DateTimeField(null=True, blank=True)
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="candidates_created")
@@ -127,6 +129,7 @@ class CandidateEvent(models.Model):
         RESUME_SCORED = "RESUME_SCORED", "Resume Scored"
         SHORTLIST_DECISION_RECORDED = "SHORTLIST_DECISION_RECORDED", "Shortlist Decision Recorded"
         CANDIDATE_IDENTITY_REVIEWED = "CANDIDATE_IDENTITY_REVIEWED", "Candidate Identity Reviewed"
+        CANDIDATE_DETAILS_FROM_RESUME = "CANDIDATE_DETAILS_FROM_RESUME", "Candidate details read from resume"
         WORKFLOW_STARTED = "WORKFLOW_STARTED", "Workflow Started"
         WORKFLOW_COMPLETED = "WORKFLOW_COMPLETED", "Workflow Completed"
         WORKFLOW_FAILED = "WORKFLOW_FAILED", "Workflow Failed"
@@ -134,6 +137,9 @@ class CandidateEvent(models.Model):
         SCREENING_CALL_STARTED = "SCREENING_CALL_STARTED", "Screening Call Started"
         SCREENING_CALL_FAILED = "SCREENING_CALL_FAILED", "Screening Call Failed To Start"
         SCREENING_CALL_ENDED = "SCREENING_CALL_ENDED", "Screening Call Ended"
+        SCREENING_BROWSER_SESSION_STARTED = "SCREENING_BROWSER_SESSION_STARTED", "Browser Voice Session Started (No Phone Call)"
+        SCREENING_BROWSER_SESSION_FAILED = "SCREENING_BROWSER_SESSION_FAILED", "Browser Voice Session Failed To Start"
+        SCREENING_BROWSER_SESSION_ENDED = "SCREENING_BROWSER_SESSION_ENDED", "Browser Voice Session Ended"
         SCREENING_ANALYSIS_FAILED = "SCREENING_ANALYSIS_FAILED", "Screening Analysis Failed"
         SCREENING_RESULT_RECORDED = "SCREENING_RESULT_RECORDED", "Screening Result Recorded"
         SCREENING_ESCALATED = "SCREENING_ESCALATED", "Screening Escalated To HR"
@@ -144,6 +150,11 @@ class CandidateEvent(models.Model):
         INTERVIEW_SLOTS_PROPOSED = "INTERVIEW_SLOTS_PROPOSED", "Interview Slots Proposed (Calendar Checked)"
         INTERVIEW_NO_SHARED_AVAILABILITY = "INTERVIEW_NO_SHARED_AVAILABILITY", "No Shared Availability - HR Task"
         INTERVIEW_SLOT_CONFIRMED = "INTERVIEW_SLOT_CONFIRMED", "Interview Slot Confirmed"
+        INTERVIEW_AUTO_SCHEDULE_FAILED = "INTERVIEW_AUTO_SCHEDULE_FAILED", "Automatic Interview Scheduling Needs HR"
+        REJECTION_PENDING = "REJECTION_PENDING", "Declined - rejection notice and data deletion queued"
+        REJECTION_EMAIL_SENT = "REJECTION_EMAIL_SENT", "Rejection Email Sent"
+        REJECTION_EMAIL_FAILED = "REJECTION_EMAIL_FAILED", "Rejection Email Failed"
+        REJECTION_EMAIL_SKIPPED = "REJECTION_EMAIL_SKIPPED", "Rejection Email Skipped (No Email Address)"
         INTERVIEW_CANCELLED = "INTERVIEW_CANCELLED", "Interview Cancelled"
         INVITATION_DRAFTED = "INVITATION_DRAFTED", "Invitation Drafted"
         INVITATION_APPROVED = "INVITATION_APPROVED", "Invitation Approved"

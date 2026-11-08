@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useRequisition, useSaveRequisition, useUsers } from '../../api/hooks'
-import { Button, Card, ErrorAlert, Field, Input, Loading, PageHeader, Select, Textarea } from '../../components/ui'
+import { Button, Card, DateInput, ErrorAlert, Field, Input, Loading, PageHeader, Select, Textarea } from '../../components/ui'
 import type { Requisition } from '../../lib/types'
 
 type FormState = Record<string, string>
@@ -10,6 +10,7 @@ const EMPTY: FormState = {
   title: '', department: '', location: '', employment_type: 'FULL_TIME', work_mode: 'ONSITE', description: '',
   responsibilities: '', required_skills: '', preferred_skills: '', screening_questions: '', minimum_experience_years: '0',
   education_requirements: '', salary_min: '', salary_max: '', currency: 'PKR', headcount: '1', hiring_manager: '', target_close_date: '',
+  interview_format: 'ONSITE', interview_whatsapp_number: '',
 }
 
 const lines = (value: string) => value.split('\n').map((s) => s.trim()).filter(Boolean)
@@ -22,6 +23,7 @@ function toForm(r: Requisition): FormState {
     minimum_experience_years: r.minimum_experience_years, education_requirements: r.education_requirements,
     salary_min: r.salary_min ?? '', salary_max: r.salary_max ?? '', currency: r.currency, headcount: String(r.headcount),
     hiring_manager: r.hiring_manager ? String(r.hiring_manager) : '', target_close_date: r.target_close_date ?? '',
+    interview_format: r.interview_format, interview_whatsapp_number: r.interview_whatsapp_number,
   }
 }
 
@@ -47,7 +49,10 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
       title: form.title, department: form.department, location: form.location, employment_type: form.employment_type,
       work_mode: form.work_mode, description: form.description, responsibilities: form.responsibilities,
       required_skills: lines(form.required_skills), preferred_skills: lines(form.preferred_skills),
-      screening_questions: lines(form.screening_questions), minimum_experience_years: form.minimum_experience_years || '0',
+      screening_questions: lines(form.screening_questions),
+      interview_format: form.interview_format as Requisition['interview_format'],
+      interview_whatsapp_number: form.interview_format === 'VIDEO' ? form.interview_whatsapp_number.trim() : '',
+      minimum_experience_years: form.minimum_experience_years || '0',
       education_requirements: form.education_requirements, salary_min: form.salary_min || null, salary_max: form.salary_max || null,
       currency: form.currency, headcount: Number(form.headcount) || 1,
       hiring_manager: form.hiring_manager ? Number(form.hiring_manager) : null, target_close_date: form.target_close_date || null,
@@ -65,7 +70,9 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Job title"><Input required value={form.title} onChange={set('title')} /></Field>
             <Field label="Department"><Input required value={form.department} onChange={set('department')} /></Field>
-            <Field label="Location"><Input value={form.location} onChange={set('location')} /></Field>
+            <Field label="Location" hint={form.interview_format === 'ONSITE' ? 'Required: this is the address candidates are invited to for on-site interviews.' : undefined}>
+              <Input required={form.interview_format === 'ONSITE'} value={form.location} onChange={set('location')} />
+            </Field>
             <Field label="Work arrangement">
               <Select value={form.work_mode} onChange={set('work_mode')} options={[{ value: 'ONSITE', label: 'On-site' }, { value: 'HYBRID', label: 'Hybrid' }, { value: 'REMOTE', label: 'Remote' }]} />
             </Field>
@@ -76,7 +83,7 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
               <Select value={form.hiring_manager} onChange={set('hiring_manager')} options={[{ value: '', label: '— None —' }, ...(managers.data ?? []).map((u) => ({ value: String(u.id), label: u.full_name || u.username }))]} />
             </Field>
             <Field label="Headcount"><Input type="number" min={1} value={form.headcount} onChange={set('headcount')} /></Field>
-            <Field label="Target close date"><Input type="date" value={form.target_close_date} onChange={set('target_close_date')} /></Field>
+            <Field label="Target close date"><DateInput value={form.target_close_date} onChange={(iso) => setForm((f) => ({ ...f, target_close_date: iso }))} /></Field>
           </div>
         </Card>
         <Card title="Job description and requirements">
@@ -92,6 +99,19 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
             <Field label="Approved screening questions" hint="One per line. Job-related only — never protected or sensitive topics.">
               <Textarea rows={6} value={form.screening_questions} onChange={set('screening_questions')} />
             </Field>
+          </div>
+        </Card>
+        <Card title="Interview">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Interview format" hint="The scheduling agent emails candidates for this format once HR approves them after screening.">
+              <Select value={form.interview_format} onChange={set('interview_format')}
+                options={[{ value: 'ONSITE', label: 'On-site (at the location above)' }, { value: 'VIDEO', label: 'Video call (WhatsApp)' }]} />
+            </Field>
+            {form.interview_format === 'VIDEO' && (
+              <Field label="WhatsApp number for the video call" hint="With country code, e.g. +923001234567. Included in the invitation email.">
+                <Input required type="tel" value={form.interview_whatsapp_number} onChange={set('interview_whatsapp_number')} placeholder="+923001234567" />
+              </Field>
+            )}
           </div>
         </Card>
         <Card title="Compensation">

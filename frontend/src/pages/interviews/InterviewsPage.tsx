@@ -2,13 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAddAvailability, useAvailability, useDeleteAvailability, useInterviews, useUsers } from '../../api/hooks'
 import { useAuth } from '../../auth/AuthContext'
-import { Alert, Badge, Button, Card, Empty, ErrorAlert, Field, Input, Loading, PageHeader, Select, Table, Td } from '../../components/ui'
+import { Alert, Badge, Button, Card, DateInput, Empty, ErrorAlert, Field, Input, Loading, PageHeader, Select, Table, Td } from '../../components/ui'
 import { BROWSER_TZ, COMMON_TIMEZONES, formatInZone, humanize } from '../../lib/format'
 
 function AvailabilityManager() {
-  const { user, isRecruiter } = useAuth()
-  const users = useUsers(undefined, isRecruiter)
-  const [interviewer, setInterviewer] = useState<number | undefined>(isRecruiter ? undefined : user?.id)
+  const { user, hasFullAccess } = useAuth()
+  const users = useUsers(undefined, hasFullAccess)
+  const [interviewer, setInterviewer] = useState<number | undefined>(hasFullAccess ? undefined : user?.id)
   const slots = useAvailability(interviewer)
   const add = useAddAvailability()
   const remove = useDeleteAvailability()
@@ -20,17 +20,17 @@ function AvailabilityManager() {
         <Alert tone="info">No Google/Microsoft calendar is connected. This internal availability calendar is the scheduling source; booked interviews are excluded automatically.</Alert>
         <ErrorAlert error={add.error ?? remove.error} />
         <div className="flex flex-wrap items-end gap-2">
-          {isRecruiter && (
+          {hasFullAccess && (
             <Field label="Interviewer">
               <Select value={interviewer ? String(interviewer) : ''} onChange={(e) => setInterviewer(e.target.value ? Number(e.target.value) : undefined)}
-                options={[{ value: '', label: 'All interviewers (view)' }, ...(users.data ?? []).map((u) => ({ value: String(u.id), label: u.full_name || u.username }))]} />
+                options={[{ value: '', label: 'All interviewers (view)' }, ...(users.data ?? []).map((u) => ({ value: String(u.id), label: `${u.full_name || u.username} (${humanize(u.role)})` }))]} />
             </Field>
           )}
-          <Field label="Date"><Input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} /></Field>
+          <Field label="Date"><DateInput required value={form.date} onChange={(iso) => setForm({ ...form, date: iso })} className="w-44" /></Field>
           <Field label="From"><Input type="time" value={form.start_time} onChange={(e) => setForm({ ...form, start_time: e.target.value })} /></Field>
           <Field label="To"><Input type="time" value={form.end_time} onChange={(e) => setForm({ ...form, end_time: e.target.value })} /></Field>
           <Field label="Time zone"><Select value={form.timezone} onChange={(e) => setForm({ ...form, timezone: e.target.value })} options={COMMON_TIMEZONES.map((z) => ({ value: z, label: z }))} /></Field>
-          <Button loading={add.isPending} disabled={isRecruiter && !interviewer} title={isRecruiter && !interviewer ? 'Choose an interviewer' : ''}
+          <Button loading={add.isPending} disabled={hasFullAccess && !interviewer} title={hasFullAccess && !interviewer ? 'Choose an interviewer' : ''}
             onClick={() => add.mutate({ ...form, interviewer: interviewer ?? user?.id })}>Add window</Button>
         </div>
         {slots.isLoading ? <Loading /> : !slots.data?.length ? <Empty>No upcoming availability.</Empty> : (
@@ -52,9 +52,9 @@ function AvailabilityManager() {
 }
 
 export function InterviewsPage() {
-  const { isRecruiter } = useAuth()
+  const { hasFullAccess } = useAuth()
   const [status, setStatus] = useState('ACTIVE')
-  const interviews = useInterviews({ status: status || undefined, mine: isRecruiter ? undefined : '1' })
+  const interviews = useInterviews({ status: status || undefined, mine: hasFullAccess ? undefined : '1' })
   return (
     <>
       <PageHeader title="Interviews" subtitle="Scheduling coordination, confirmed interviews and interviewer availability (FR-09–FR-11)." />

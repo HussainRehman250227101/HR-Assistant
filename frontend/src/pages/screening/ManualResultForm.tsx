@@ -14,6 +14,11 @@ export function ManualResultForm({ screening }: { screening: Screening }) {
   const [consent, setConsent] = useState('NOT_ASKED')
   const [answers, setAnswers] = useState(screening.questions.map(() => ({ answer_status: 'ANSWERED', candidate_statement: '', recruiter_note: '' })))
   const [availability, setAvailability] = useState('')
+  const [salaryMin, setSalaryMin] = useState('')
+  const [salaryMax, setSalaryMax] = useState('')
+  const [currency, setCurrency] = useState(screening.job?.currency ?? '')
+  const [period, setPeriod] = useState('MONTHLY')
+  const [notice, setNotice] = useState('')
   const [candidateQuestions, setCandidateQuestions] = useState('')
   const [summary, setSummary] = useState('')
 
@@ -24,6 +29,9 @@ export function ManualResultForm({ screening }: { screening: Screening }) {
     await action.mutateAsync({
       id: screening.public_id, action: 'manual-result', body: {
         call_status: callStatus, consent_status: consent, concise_summary: summary, candidate_stated_availability: availability,
+        expected_salary_min: salaryMin || null, expected_salary_max: salaryMax || null,
+        expected_salary_currency: salaryMin || salaryMax ? currency : '', expected_salary_period: salaryMin || salaryMax ? period : '',
+        notice_period: notice,
         candidate_questions: candidateQuestions.split('\n').map((s) => s.trim()).filter(Boolean),
         question_answer_pairs: answers.map((a, i) => ({ question_number: i + 1, ...a })),
       },
@@ -56,7 +64,17 @@ export function ManualResultForm({ screening }: { screening: Screening }) {
           <Input placeholder="Recruiter note (your interpretation, optional)" value={answers[i].recruiter_note} onChange={(e) => setAnswer(i, 'recruiter_note', e.target.value)} />
         </div>
       ))}
-      <Field label="Candidate stated availability"><Input value={availability} onChange={(e) => setAvailability(e.target.value)} /></Field>
+      <div className="grid gap-3 sm:grid-cols-4">
+        <Field label="Expected salary from"><Input type="number" min={0} step="any" value={salaryMin} onChange={(e) => setSalaryMin(e.target.value)} /></Field>
+        <Field label="Expected salary to"><Input type="number" min={0} step="any" value={salaryMax} onChange={(e) => setSalaryMax(e.target.value)} /></Field>
+        <Field label="Currency"><Input maxLength={3} value={currency} onChange={(e) => setCurrency(e.target.value.toUpperCase())} /></Field>
+        <Field label="Per">
+          <Select value={period} onChange={(e) => setPeriod(e.target.value)} options={[
+            { value: 'MONTHLY', label: 'Month' }, { value: 'ANNUAL', label: 'Year' }, { value: 'UNSPECIFIED', label: 'Not stated' }]} />
+        </Field>
+      </div>
+      <Field label="Notice period / earliest start"><Input value={notice} onChange={(e) => setNotice(e.target.value)} /></Field>
+      <Field label="Interview availability" hint="Days, times and time zone, as the candidate gave them"><Input value={availability} onChange={(e) => setAvailability(e.target.value)} /></Field>
       <Field label="Candidate's questions" hint="One per line"><Textarea value={candidateQuestions} onChange={(e) => setCandidateQuestions(e.target.value)} /></Field>
       <Field label="Concise factual summary"><Textarea required value={summary} onChange={(e) => setSummary(e.target.value)} /></Field>
       <Button type="submit" loading={action.isPending}>Save screening result</Button>

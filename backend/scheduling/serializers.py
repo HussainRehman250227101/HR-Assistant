@@ -63,7 +63,7 @@ class InterviewSerializer(serializers.ModelSerializer):
         fields = (
             "public_id", "candidate_reference", "candidate_name", "requisition_title", "interviewer", "interviewer_name",
             "interviewer_email", "status", "duration_minutes", "timezone", "mode", "meeting_link", "location",
-            "candidate_availability_note", "candidate_windows", "proposed_slots", "calendar_source",
+            "contact_whatsapp", "auto_scheduled", "candidate_availability_note", "candidate_windows", "proposed_slots", "calendar_source",
             "calendar_source_label", "confirmed_start", "confirmed_end", "candidate_confirmed_at",
             "interviewer_confirmed_at", "cancellation_reason", "sequence", "created_by_name", "created_at", "updated_at",
         )
@@ -89,6 +89,7 @@ class InterviewPlanSerializer(serializers.Serializer):
     mode = serializers.ChoiceField(choices=InterviewMode.choices)
     meeting_link = serializers.URLField(required=False, allow_blank=True, max_length=500)
     location = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    contact_whatsapp = serializers.CharField(required=False, allow_blank=True, max_length=20)
     candidate_availability_note = serializers.CharField(required=False, allow_blank=True, max_length=2000)
     candidate_windows = LocalWindowSerializer(many=True, allow_empty=False)
 

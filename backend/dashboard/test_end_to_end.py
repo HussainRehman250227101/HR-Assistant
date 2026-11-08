@@ -42,10 +42,11 @@ class EndToEndHiringFlowTest(APITestCase):
             MEDIA_ROOT=self.temp.name,
             LANGGRAPH_CHECKPOINT_DB_PATH=Path(self.temp.name) / "checkpoints.sqlite3",
             SCREENING_CALL_WINDOW_START_HOUR=0, SCREENING_CALL_WINDOW_END_HOUR=24,
+            SCREENING_VOICE_MODE="telephony",  # this flow exercises the optional phone-call route
         )
         overrides.enable()
         self.addCleanup(overrides.disable)
-        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.RECRUITER)
+        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.ADMIN)
         self.manager = User.objects.create_user("hm", "hm@example.test", "Pass-12345!", role=UserRole.HIRING_MANAGER,
                                                 first_name="Hina", last_name="Malik")
 
@@ -144,7 +145,7 @@ class PrivacyTests(APITestCase):
         overrides.enable()
         self.addCleanup(overrides.disable)
         self.admin = User.objects.create_user("adm", "adm@example.test", "Pass-12345!", role=UserRole.ADMIN)
-        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.RECRUITER)
+        self.recruiter = User.objects.create_user("rec", "rec@example.test", "Pass-12345!", role=UserRole.HIRING_MANAGER)
         self.client.force_authenticate(self.recruiter)
         requisition = self.client.post("/api/v1/requisitions/", {"title": "X", "department": "Y", "description": "Z", "status": "OPEN"}, format="json").data
         self.cid = self.client.post("/api/v1/candidates/", {"requisition": requisition["id"], "full_name": "Zara Shah", "email": "zara@example.test"}, format="json").data["public_id"]

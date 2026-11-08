@@ -39,7 +39,7 @@ export function CandidatesPage() {
               <tr key={c.public_id} className="hover:bg-slate-50">
                 <Td>
                   <Link to={`/candidates/${c.public_id}`} className="font-medium text-indigo-700 hover:underline">{c.display_name}</Link>
-                  {c.identity_review_required && <span className="ml-2"><Badge tone="amber" label="Identity review" /></span>}
+                  {c.identity_review_required && <span className="ml-2"><Badge tone="amber" label="Contact details missing" /></span>}
                 </Td>
                 <Td>{requisitions.data?.results.find((r) => r.id === c.requisition)?.title ?? `#${c.requisition}`}</Td>
                 <Td><Badge value={c.current_status} /></Td>

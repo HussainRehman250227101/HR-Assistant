@@ -8,7 +8,8 @@ interface AuthState {
   loading: boolean
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  isRecruiter: boolean
+  /** HR Administrator or Hiring Manager. The HR Recruiter role is interviewer-only (assigned candidates, own schedule). */
+  hasFullAccess: boolean
   isAdmin: boolean
 }
 
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       login,
       logout,
       isAdmin,
-      isRecruiter: isAdmin || user?.role === 'RECRUITER',
+      hasFullAccess: isAdmin || user?.role === 'HIRING_MANAGER',
     }
   }, [me.data, me.isLoading, login, logout])
 

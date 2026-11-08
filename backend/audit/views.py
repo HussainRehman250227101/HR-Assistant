@@ -2,7 +2,7 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff
 from .models import AuditEvent
 
 
@@ -13,7 +13,7 @@ class AuditPagination(PageNumberPagination):
 
 
 class AuditEventListView(APIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
         qs = AuditEvent.objects.select_related("actor")

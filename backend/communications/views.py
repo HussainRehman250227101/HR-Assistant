@@ -6,7 +6,7 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff
 from scheduling.models import Interview
 from .models import CommunicationLog
 from .serializers import ApproveSendSerializer, CommunicationLogSerializer, DraftUpdateSerializer
@@ -22,7 +22,7 @@ def logs():
 
 
 class CommunicationListView(APIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
         qs = logs()
@@ -36,7 +36,7 @@ class CommunicationListView(APIView):
 
 
 class InterviewDraftView(APIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def post(self, request, interview_id):
         interview = get_object_or_404(Interview.objects.select_related("candidate", "requisition", "interviewer"), public_id=interview_id)
@@ -48,7 +48,7 @@ class InterviewDraftView(APIView):
 
 
 class CommunicationDetailView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
     serializer_class = DraftUpdateSerializer
 
     def get(self, request, public_id):
@@ -66,7 +66,7 @@ class CommunicationDetailView(GenericAPIView):
 
 
 class ApproveSendView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
     serializer_class = ApproveSendSerializer
 
     def post(self, request, public_id):
@@ -81,7 +81,7 @@ class ApproveSendView(GenericAPIView):
 
 
 class DiscardView(APIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def post(self, request, public_id):
         try:

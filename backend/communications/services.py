@@ -18,7 +18,7 @@ from candidates.models import CandidateEvent, CandidateStatus
 from candidates.services.status import change_candidate_status, record_event
 from scheduling.models import Interview, InterviewStatus
 from .models import ApprovalStatus, CommunicationLog, MessageKind, SendStatus
-from .templates_text import TEMPLATE_VERSION, build_ics, render, required_field_problems
+from .templates_text import REJECTION_TEMPLATE_VERSION, TEMPLATE_VERSION, build_ics, render, render_rejection, required_field_problems
 
 logger = logging.getLogger(__name__)
 EVENT = CandidateEvent.EventType
@@ -95,8 +95,13 @@ def _check_still_valid(log):
         raise CommunicationError(f"The email body no longer contains required details: {', '.join(missing)}.")
 
 
-def approve_and_send(log, actor, connection=None):
-    """Record explicit HR approval, then send exactly once. Retries are allowed only after a failure."""
+def approve_and_send(log, actor, connection=None, automatic=False):
+    """Record explicit HR approval, then send exactly once. Retries are allowed only after a failure.
+
+    `automatic=True` is used only by the scheduling agent: `actor` is then the HR user whose screening approval
+    released the candidate to interview, and the log is marked `auto_sent` so the audit trail shows that no
+    separate send approval was given.
+    """
     if log.approval_status == ApprovalStatus.DISCARDED:
         raise CommunicationError("This draft was discarded.")
     if log.send_status == SendStatus.SENT:
@@ -115,8 +120,10 @@ def approve_and_send(log, actor, connection=None):
         if log.approval_status == ApprovalStatus.DRAFT:
             log.approval_status = ApprovalStatus.APPROVED
             log.approved_by, log.approved_at = actor, now
-            log.save(update_fields=("approval_status", "approved_by", "approved_at", "updated_at"))
-            record_event(log.candidate, actor, EVENT.INVITATION_APPROVED, communication_id=str(log.public_id), kind=log.kind)
+            log.auto_sent = automatic
+            log.save(update_fields=("approval_status", "approved_by", "approved_at", "auto_sent", "updated_at"))
+            record_event(log.candidate, actor, EVENT.INVITATION_APPROVED, communication_id=str(log.public_id), kind=log.kind,
+                         automatic=automatic)
 
     message_id = f"<{uuid.uuid4().hex}@{settings.INVITATION_MESSAGE_ID_DOMAIN}>"
     email = EmailMessage(
@@ -155,3 +162,62 @@ def approve_and_send(log, actor, connection=None):
             change_candidate_status(log.candidate, CandidateStatus.INTERVIEW_SCHEDULED, actor,
                                     "Interview invitation approved and sent", communication_id=str(log.public_id))
     return log
+
+
+def send_rejection_email(candidate, actor):
+    """Send the friendly rejection notice at most once. Returns True when the email backend accepted it.
+
+    `actor` is the HR user whose DECLINE decision triggered it (their decision is the approval). The message is
+    marked `auto_sent`. A failure keeps the log (status FAILED) so a retry can send it; a message already SENT is
+    never sent again. Never claims success on failure.
+    """
+    if not candidate.email:
+        raise CommunicationError("The candidate has no email address.")
+    if actor is None:
+        raise CommunicationError("No HR user is recorded for the decline decision.")
+    now = timezone.now()
+    subject, body = render_rejection(candidate, candidate.requisition)
+    log, _ = CommunicationLog.objects.get_or_create(
+        idempotency_key=f"{candidate.public_id}:REJECTION",
+        defaults={
+            "candidate": candidate, "interview": None, "kind": MessageKind.REJECTION,
+            "template_version": REJECTION_TEMPLATE_VERSION, "recipient": candidate.email, "subject": subject, "body": body,
+            "approval_status": ApprovalStatus.APPROVED, "approved_by": actor, "approved_at": now, "auto_sent": True,
+            "created_by": actor,
+        },
+    )
+    claimed = CommunicationLog.objects.filter(
+        pk=log.pk, send_status__in=(SendStatus.NOT_SENT, SendStatus.FAILED),
+    ).update(send_status=SendStatus.SENDING, updated_at=now)
+    log.refresh_from_db()
+    if not claimed:
+        return log.send_status == SendStatus.SENT
+    message_id = f"<{uuid.uuid4().hex}@{settings.INVITATION_MESSAGE_ID_DOMAIN}>"
+    email = EmailMessage(
+        subject=log.subject, body=log.body, from_email=settings.DEFAULT_FROM_EMAIL, to=[log.recipient],
+        headers={"Message-ID": message_id, "X-HR-Communication-Id": str(log.public_id)},
+        connection=get_connection(),
+    )
+    log.send_attempts += 1
+    log.provider = settings.EMAIL_BACKEND.rsplit(".", 1)[-1]
+    try:
+        if email.send(fail_silently=False) != 1:
+            raise RuntimeError("The email backend did not accept the message.")
+    except Exception as exc:  # any provider failure: keep the log for a retry, never claim success
+        logger.warning("Rejection email failed. communication=%s exception_type=%s", log.public_id, type(exc).__name__)
+        log.send_status = SendStatus.FAILED
+        log.error_code = "EMAIL_SEND_FAILED"
+        log.error_message = "The email provider did not accept the message. It will be retried."
+        log.save(update_fields=("send_status", "send_attempts", "provider", "error_code", "error_message", "updated_at"))
+        record_event(candidate, None, EVENT.REJECTION_EMAIL_FAILED, communication_id=str(log.public_id),
+                     attempts=log.send_attempts)
+        return False
+    log.send_status = SendStatus.SENT
+    log.provider_message_id = message_id
+    log.sent_at = timezone.now()
+    log.error_code = log.error_message = ""
+    log.save(update_fields=("send_status", "send_attempts", "provider", "provider_message_id", "sent_at",
+                            "error_code", "error_message", "updated_at"))
+    record_event(candidate, None, EVENT.REJECTION_EMAIL_SENT, communication_id=str(log.public_id),
+                 provider_message_id=message_id)
+    return True

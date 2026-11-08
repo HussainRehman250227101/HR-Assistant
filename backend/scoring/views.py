@@ -6,7 +6,7 @@ from rest_framework import exceptions, permissions, status
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff
 from audit.models import log_audit
 from candidates.models import Candidate
 from llm.exceptions import LLMConfigurationError, LLMProviderError
@@ -23,7 +23,7 @@ from .services.rubrics import get_or_create_rubric
 
 
 class RequisitionRubricView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
     serializer_class = ScoringRubricSerializer
 
     def get(self, request, reference_code):
@@ -56,7 +56,7 @@ class RequisitionRubricView(GenericAPIView):
 
 
 class CandidateEvaluationView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
     serializer_class = EvaluationRequestSerializer
 
     def post(self, request, candidate_id):

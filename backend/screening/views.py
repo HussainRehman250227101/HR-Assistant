@@ -10,14 +10,15 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserRole
-from accounts.permissions import IsHRAdmin, IsRecruiterOrAdmin
+from accounts.permissions import IsHRAdmin, IsHRStaff, has_full_access
 from candidates.views import candidates_visible_to
 from . import script
 from .models import ACTIVE_SCREENING_STATUSES, CallAttemptStatus, Screening, ScreeningCallAttempt, ScreeningStatus
 from .serializers import (
-    ManualResultSerializer, ReasonSerializer, ScreeningCreateSerializer, ScreeningReviewRequestSerializer, ScreeningSerializer,
+    BrowserSessionCompleteSerializer, BrowserSessionStartSerializer, ManualResultSerializer, ReasonSerializer,
+    ScreeningCallAttemptSerializer, ScreeningCreateSerializer, ScreeningReviewRequestSerializer, ScreeningSerializer,
 )
+from .services.browser import SessionState, complete_browser_session, start_browser_session
 from .services.review import review_screening
 from .services.calls import (
     ScreeningError, cancel_screening, create_screening, place_call, record_manual_result,
@@ -28,8 +29,19 @@ from .services.voice import VoiceConfigurationError, VoiceProviderError, configu
 logger = logging.getLogger(__name__)
 
 
-def is_recruiter(user):
-    return user.is_superuser or getattr(user, "role", None) in (UserRole.ADMIN, UserRole.RECRUITER)
+class VoiceNotConfigured(exceptions.APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "The voice provider is not configured on the server."
+    default_code = "voice_not_configured"
+
+
+class VoiceProviderUnavailable(exceptions.APIException):
+    status_code = status.HTTP_502_BAD_GATEWAY
+    default_detail = "The voice provider could not complete the request. Try again shortly."
+    default_code = "voice_provider_error"
+
+
+is_recruiter = has_full_access  # historic name: HR Administrator / Hiring Manager see raw transcripts
 
 
 def screenings_visible_to(user):
@@ -41,7 +53,7 @@ def screenings_visible_to(user):
 def serialize(screening, user):
     data = ScreeningSerializer(screening).data
     if not is_recruiter(user):
-        data["transcript"] = []  # least privilege: hiring managers see the summary, not the raw transcript
+        data["transcript"] = []  # least privilege: interviewers see the summary, not the raw transcript
     return data
 
 
@@ -55,7 +67,7 @@ class CandidateScreeningListView(GenericAPIView):
     serializer_class = ScreeningCreateSerializer
 
     def get_permissions(self):
-        return [IsRecruiterOrAdmin()] if self.request.method == "POST" else [permissions.IsAuthenticated()]
+        return [IsHRStaff()] if self.request.method == "POST" else [permissions.IsAuthenticated()]
 
     def get(self, request, candidate_id):
         candidate = get_object_or_404(candidates_visible_to(request.user), public_id=candidate_id)
@@ -91,7 +103,7 @@ class ScreeningDetailView(APIView):
 class ScreeningQueueView(APIView):
     """Screenings needing recruiter attention (pending calls, failures, results awaiting review)."""
 
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
         qs = screenings_visible_to(request.user).filter(status__in=ACTIVE_SCREENING_STATUSES)
@@ -105,7 +117,7 @@ class ScreeningQueueView(APIView):
 
 
 class _ScreeningAction(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get_screening(self, public_id):
         return get_object_or_404(screenings_visible_to(self.request.user), public_id=public_id)
@@ -188,15 +200,86 @@ class ScreeningReviewView(_ScreeningAction):
         return Response(serialize(screening, request.user), status=status.HTTP_201_CREATED)
 
 
+class ScreeningBrowserSessionStartView(_ScreeningAction):
+    """Start a browser voice session (no phone call): returns a short-lived ElevenLabs WebRTC conversation token."""
+
+    serializer_class = BrowserSessionStartSerializer
+
+    def post(self, request, public_id):
+        screening = self.get_screening(public_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            session = start_browser_session(screening, request.user, serializer.validated_data["consent_acknowledged"])
+        except ScreeningError as exc:
+            raise exceptions.ValidationError({"detail": str(exc)}) from exc
+        except VoiceConfigurationError as exc:
+            raise VoiceNotConfigured(str(exc)) from exc
+        except VoiceProviderError as exc:
+            raise VoiceProviderUnavailable(
+                f"ElevenLabs could not start the session: {exc} The failed attempt was recorded. "
+                "Check the ElevenLabs API key and agent ID, then try again."
+            ) from exc
+        attempt = session["attempt"]
+        response = Response({
+            "screening_id": str(screening.public_id),
+            "attempt_id": str(attempt.public_id),
+            "attempt_number": attempt.attempt_number,
+            "max_attempts": screening.max_attempts,
+            "conversation_id": attempt.provider_conversation_id,
+            "conversation_token": session["conversation_token"],
+            "connection_type": "webrtc",
+            "dynamic_variables": session["dynamic_variables"],
+        }, status=status.HTTP_201_CREATED)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class ScreeningBrowserSessionCompleteView(_ScreeningAction):
+    """Browser reports that the session ended; the backend fetches the authoritative result from ElevenLabs.
+
+    202 + `session_state=processing` means ElevenLabs is still finalising the transcript; call again shortly.
+    Repeated calls are safe: a concluded session is never concluded twice.
+    """
+
+    serializer_class = BrowserSessionCompleteSerializer
+
+    def post(self, request, public_id):
+        screening = self.get_screening(public_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            attempt, state = complete_browser_session(
+                screening, request.user, attempt_id=data.get("attempt_id"),
+                client_end_reason=data["client_end_reason"], connected=data["connected"],
+                client_conversation_id=data.get("conversation_id") or None,
+            )
+        except ScreeningError as exc:
+            raise exceptions.ValidationError({"detail": str(exc)}) from exc
+        except VoiceConfigurationError as exc:
+            raise VoiceNotConfigured(str(exc)) from exc
+        except VoiceProviderError as exc:
+            raise VoiceProviderUnavailable(
+                "The session result could not be retrieved from ElevenLabs. Nothing was lost; try again shortly."
+            ) from exc
+        payload = serialize(screening, request.user)
+        payload["session_state"] = state
+        payload["session_attempt"] = ScreeningCallAttemptSerializer(attempt).data
+        return Response(payload, status=status.HTTP_202_ACCEPTED if state == SessionState.PROCESSING else status.HTTP_200_OK)
+
+
 class ScreeningAgentConfigView(APIView):
     """Integration status (booleans only) and the approved agent script for configuring ElevenLabs."""
 
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
+        browser_mode = settings.SCREENING_VOICE_MODE == "browser"
         data = {
             "integration": configuration_status(),
-            "script_version": script.SCRIPT_VERSION,
+            "voice_mode": settings.SCREENING_VOICE_MODE,
+            "script_version": script.BROWSER_SCRIPT_VERSION if browser_mode else script.SCRIPT_VERSION,
             "dynamic_variables": list(script.DYNAMIC_VARIABLES),
             "calling_policy": {
                 "max_attempts": settings.SCREENING_MAX_CALL_ATTEMPTS,
@@ -205,10 +288,14 @@ class ScreeningAgentConfigView(APIView):
                 "window_start_hour": settings.SCREENING_CALL_WINDOW_START_HOUR,
                 "window_end_hour": settings.SCREENING_CALL_WINDOW_END_HOUR,
             },
+            "browser_policy": {
+                "max_attempts": settings.SCREENING_MAX_CALL_ATTEMPTS,
+                "session_timeout_minutes": settings.SCREENING_BROWSER_SESSION_TIMEOUT_MINUTES,
+            },
         }
         if IsHRAdmin().has_permission(request, self):
-            data["agent_first_message"] = script.AGENT_FIRST_MESSAGE
-            data["agent_system_prompt"] = script.AGENT_SYSTEM_PROMPT
+            data["agent_first_message"] = script.BROWSER_AGENT_FIRST_MESSAGE if browser_mode else script.AGENT_FIRST_MESSAGE
+            data["agent_system_prompt"] = script.BROWSER_AGENT_SYSTEM_PROMPT if browser_mode else script.AGENT_SYSTEM_PROMPT
         return Response(data)
 
 

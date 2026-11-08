@@ -1,11 +1,12 @@
 """API serializers for requisition data."""
 
+import re
 from decimal import Decimal
 
 from rest_framework import serializers
 
 from accounts.models import User, UserRole
-from .models import Requisition
+from .models import InterviewFormat, Requisition
 
 
 class RequisitionSerializer(serializers.ModelSerializer):
@@ -47,7 +48,7 @@ class RequisitionSerializer(serializers.ModelSerializer):
             "id", "reference_code", "title", "department", "location",
             "employment_type", "work_mode", "description", "responsibilities",
             "required_skills", "preferred_skills", "screening_questions",
-            "minimum_experience_years", "education_requirements", "salary_min",
+            "interview_format", "interview_whatsapp_number", "minimum_experience_years", "education_requirements", "salary_min",
             "salary_max", "currency", "headcount", "status", "created_by",
             "created_by_name", "hiring_manager", "hiring_manager_name",
             "target_close_date", "opened_at", "closed_at", "created_at", "updated_at",
@@ -90,7 +91,30 @@ class RequisitionSerializer(serializers.ModelSerializer):
     def validate_screening_questions(self, value):
         return self._validate_unique_text_list(value, "Screening questions")
 
+    def validate_interview_whatsapp_number(self, value):
+        value = (value or "").strip()
+        if not value:
+            return ""
+        digits = re.sub(r"[\s().-]", "", value)
+        if not re.fullmatch(r"\+?\d{8,15}", digits):
+            raise serializers.ValidationError("Enter a valid WhatsApp number with country code, e.g. +923001234567.")
+        return digits if digits.startswith("+") else f"+{digits}"
+
     def validate(self, attrs):
+        fmt = attrs.get("interview_format", getattr(self.instance, "interview_format", InterviewFormat.ONSITE))
+        number = attrs.get("interview_whatsapp_number", getattr(self.instance, "interview_whatsapp_number", ""))
+        if fmt == InterviewFormat.VIDEO and not number:
+            raise serializers.ValidationError(
+                {"interview_whatsapp_number": "A WhatsApp number is required when the interview format is a video call."}
+            )
+        if fmt == InterviewFormat.ONSITE:
+            # Only the WhatsApp number is irrelevant for on-site interviews; keep the field clean.
+            attrs["interview_whatsapp_number"] = ""
+            location = attrs.get("location", getattr(self.instance, "location", ""))
+            if "interview_format" in self.initial_data and not (location or "").strip():
+                raise serializers.ValidationError(
+                    {"location": "Enter the location: it is the address candidates are invited to for on-site interviews."}
+                )
         salary_min = attrs.get("salary_min", getattr(self.instance, "salary_min", None))
         salary_max = attrs.get("salary_max", getattr(self.instance, "salary_max", None))
         if salary_min is not None and salary_max is not None and salary_min > salary_max:

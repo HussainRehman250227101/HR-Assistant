@@ -22,6 +22,8 @@ export interface Paginated<T> {
 
 export type RequisitionStatus = 'DRAFT' | 'OPEN' | 'ON_HOLD' | 'CLOSED'
 
+export type InterviewFormat = 'ONSITE' | 'VIDEO'
+
 export interface Requisition {
   id: number
   reference_code: string
@@ -35,6 +37,8 @@ export interface Requisition {
   required_skills: string[]
   preferred_skills: string[]
   screening_questions: string[]
+  interview_format: InterviewFormat
+  interview_whatsapp_number: string
   minimum_experience_years: string
   education_requirements: string
   salary_min: string | null
@@ -95,6 +99,8 @@ export interface Candidate {
   consent_preferences: Record<string, unknown>
   current_status: CandidateStatus
   identity_review_required: boolean
+  /** Fields the system read from the candidate's own resume (names only). */
+  auto_filled_fields: string[]
   closed_reason: string
   personal_data_erased_at: string | null
   created_by: number
@@ -185,11 +191,20 @@ export interface ShortlistQueueItem {
   evaluation: Evaluation
 }
 
+export interface AutoScoringStatus {
+  enabled: boolean
+  interval_seconds: number
+  batch_limit: number
+  awaiting_scoring: number
+  last_automatic_run_at: string | null
+}
+
 export interface WorkflowRun {
   public_id: string
   candidate_reference: string
   resume_reference: string
   evaluation_reference: string | null
+  trigger: 'MANUAL' | 'AUTOMATIC'
   status: string
   current_step: string
   error_code: string
@@ -243,7 +258,8 @@ export interface Screening {
   candidate_name: string
   requisition_reference: string
   requisition_title: string
-  channel: 'AI_VOICE' | 'HUMAN_LED'
+  job: ScreeningJob
+  channel: ScreeningChannel
   status: ScreeningStatus
   call_status: string
   consent_status: string
@@ -255,6 +271,15 @@ export interface Screening {
   next_attempt_not_before: string | null
   question_answer_pairs: QuestionAnswerPair[]
   candidate_stated_availability: string
+  /** Standard answers; *_statement fields are the candidate's own words, verified against the transcript. */
+  availability_statement: string
+  expected_salary_min: string | null
+  expected_salary_max: string | null
+  expected_salary_currency: string
+  expected_salary_period: '' | 'MONTHLY' | 'ANNUAL' | 'UNSPECIFIED'
+  expected_salary_statement: string
+  notice_period: string
+  notice_period_statement: string
   role_requirement_responses: { requirement: string; candidate_statement: string; status: string }[]
   candidate_questions: string[]
   unresolved_questions: string[]
@@ -275,6 +300,52 @@ export interface Screening {
   created_at: string
   updated_at: string
 }
+
+/** The requisition's job description, shown beside the candidate's answers on the screening review. */
+export interface ScreeningJob {
+  title: string
+  department: string
+  location: string
+  employment_type: string
+  work_mode: string
+  description: string
+  responsibilities: string
+  required_skills: string[]
+  preferred_skills: string[]
+  minimum_experience_years: string
+  education_requirements: string
+  salary_min: string | null
+  salary_max: string | null
+  currency: string
+}
+
+/** AI_VOICE = Twilio phone call (optional telephony mode); BROWSER_VOICE = ElevenLabs WebRTC session, no phone call. */
+export type ScreeningChannel = 'AI_VOICE' | 'BROWSER_VOICE' | 'HUMAN_LED'
+
+/** POST /screening/<id>/browser-session/ — a short-lived ElevenLabs WebRTC token; never the API key. */
+export interface BrowserSessionStart {
+  screening_id: string
+  attempt_id: string
+  attempt_number: number
+  max_attempts: number
+  conversation_id: string | null
+  conversation_token: string
+  connection_type: 'webrtc'
+  dynamic_variables: Record<string, string>
+}
+
+export type BrowserSessionState = 'processing' | 'concluded' | 'already_concluded'
+
+export type ClientEndReason = 'user_ended' | 'agent_ended' | 'connection_error' | 'start_failed' | 'page_closed' | 'unknown'
+
+export interface BrowserSessionComplete {
+  attempt_id?: string
+  client_end_reason: ClientEndReason
+  connected?: boolean | null
+  conversation_id?: string
+}
+
+export type BrowserSessionResult = Screening & { session_state: BrowserSessionState; session_attempt: CallAttempt }
 
 export interface ScreeningReview {
   public_id: string
@@ -317,6 +388,8 @@ export interface Interview {
   timezone: string
   mode: 'VIDEO' | 'ONSITE' | 'PHONE'
   meeting_link: string
+  contact_whatsapp: string
+  auto_scheduled: boolean
   location: string
   candidate_availability_note: string
   candidate_windows: Slot[]
@@ -355,6 +428,7 @@ export interface CommunicationLog {
   meeting_details: Record<string, string | number>
   approval_status: 'DRAFT' | 'APPROVED' | 'DISCARDED'
   approved_by_name: string | null
+  auto_sent: boolean
   approved_at: string | null
   send_status: 'NOT_SENT' | 'SENDING' | 'SENT' | 'FAILED'
   send_attempts: number

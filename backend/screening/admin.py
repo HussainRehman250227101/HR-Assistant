@@ -6,7 +6,7 @@ from .models import Screening, ScreeningCallAttempt
 class CallAttemptInline(admin.TabularInline):
     model = ScreeningCallAttempt
     extra = 0
-    fields = ("attempt_number", "status", "outcome", "destination_masked", "telephony_status", "started_at", "ended_at")
+    fields = ("attempt_number", "provider", "status", "outcome", "destination_masked", "telephony_status", "started_at", "ended_at")
     readonly_fields = fields
     can_delete = False
 

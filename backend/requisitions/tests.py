@@ -10,7 +10,7 @@ class RequisitionAPITests(APITestCase):
     def setUp(self):
         self.recruiter = User.objects.create_user(
             username="recruiter", email="recruiter@example.test",
-            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+            password="Strong-Test-Password-123!", role=UserRole.ADMIN,
         )
         self.manager = User.objects.create_user(
             username="manager", email="manager@example.test",
@@ -76,7 +76,37 @@ class RequisitionAPITests(APITestCase):
         self.assertEqual(requisition.preferred_skills, ["Python", "FactoryTalk"])
         self.assertEqual(requisition.screening_questions, ["Describe your PLC commissioning experience."])
 
-    def test_hiring_manager_sees_only_assigned_requisitions(self):
+    def test_interview_format_defaults_to_onsite_and_video_requires_a_whatsapp_number(self):
+        self.client.force_authenticate(user=self.recruiter)
+        created = self.client.post(self.list_url, {**self.payload, "interview_format": "ONSITE"}, format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED, created.data)
+        self.assertEqual(created.data["interview_format"], "ONSITE")
+        self.assertEqual(created.data["interview_whatsapp_number"], "")
+        missing = self.client.post(self.list_url, {**self.payload, "interview_format": "VIDEO"}, format="json")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("interview_whatsapp_number", missing.data)
+        bad = self.client.post(
+            self.list_url, {**self.payload, "interview_format": "VIDEO", "interview_whatsapp_number": "call me"}, format="json")
+        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
+        video = self.client.post(
+            self.list_url,
+            {**self.payload, "interview_format": "VIDEO", "interview_whatsapp_number": "+92 300-1234567"}, format="json")
+        self.assertEqual(video.status_code, status.HTTP_201_CREATED, video.data)
+        self.assertEqual(video.data["interview_whatsapp_number"], "+923001234567")
+
+    def test_onsite_format_needs_a_location_and_drops_a_stray_whatsapp_number(self):
+        self.client.force_authenticate(user=self.recruiter)
+        no_location = self.client.post(
+            self.list_url, {**self.payload, "location": "", "interview_format": "ONSITE"}, format="json")
+        self.assertEqual(no_location.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("location", no_location.data)
+        stray = self.client.post(
+            self.list_url,
+            {**self.payload, "interview_format": "ONSITE", "interview_whatsapp_number": "+923001234567"}, format="json")
+        self.assertEqual(stray.status_code, status.HTTP_201_CREATED, stray.data)
+        self.assertEqual(stray.data["interview_whatsapp_number"], "")
+
+    def test_hiring_manager_sees_every_requisition(self):
         assigned = self.create_requisition()
         other = self.create_requisition(
             title="Automation Engineer", hiring_manager=self.other_manager.id
@@ -85,15 +115,40 @@ class RequisitionAPITests(APITestCase):
         response = self.client.get(self.list_url)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         result_codes = {item["reference_code"] for item in response.data["results"]}
-        self.assertEqual(result_codes, {str(assigned.reference_code)})
-        detail = self.client.get(
-            reverse("requisitions:requisition-detail", args=[other.reference_code])
-        )
-        self.assertEqual(detail.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(result_codes, {str(assigned.reference_code), str(other.reference_code)})
+        created = self.client.post(self.list_url, self.payload, format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
 
-    def test_hiring_manager_cannot_create_or_edit_requisitions(self):
+    def test_recruiter_interviewer_sees_only_requisitions_of_assigned_candidates(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from candidates.models import Candidate
+        from scheduling.models import Interview
+        interviewer = User.objects.create_user(
+            username="interviewer", email="interviewer@example.test",
+            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+        )
+        assigned = self.create_requisition()
+        other = self.create_requisition(title="Automation Engineer")
+        candidate = Candidate.objects.create(requisition=assigned, full_name="A Candidate", created_by=self.admin)
+        start = timezone.now() + timedelta(days=2)
+        Interview.objects.create(
+            candidate=candidate, requisition=assigned, interviewer=interviewer, timezone="Asia/Karachi", status="SCHEDULED",
+            confirmed_start=start, confirmed_end=start + timedelta(minutes=45), mode="ONSITE", location="Office", created_by=self.admin,
+        )
+        self.client.force_authenticate(user=interviewer)
+        response = self.client.get(self.list_url)
+        self.assertEqual({i["reference_code"] for i in response.data["results"]}, {str(assigned.reference_code)})
+        hidden = self.client.get(reverse("requisitions:requisition-detail", args=[other.reference_code]))
+        self.assertEqual(hidden.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_recruiter_interviewer_cannot_create_or_edit_requisitions(self):
         requisition = self.create_requisition()
-        self.client.force_authenticate(user=self.manager)
+        interviewer = User.objects.create_user(
+            username="interviewer2", email="interviewer2@example.test",
+            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+        )
+        self.client.force_authenticate(user=interviewer)
         create_response = self.client.post(self.list_url, self.payload, format="json")
         update_response = self.client.patch(
             reverse("requisitions:requisition-detail", args=[requisition.reference_code]),

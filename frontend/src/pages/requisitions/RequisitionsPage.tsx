@@ -6,7 +6,7 @@ import { Badge, Card, Empty, ErrorAlert, Input, Loading, PageHeader, Select, Tab
 import { formatDate } from '../../lib/format'
 
 export function RequisitionsPage() {
-  const { isRecruiter } = useAuth()
+  const { hasFullAccess } = useAuth()
   const [status, setStatus] = useState('')
   const [search, setSearch] = useState('')
   const [page, setPage] = useState(1)
@@ -17,7 +17,7 @@ export function RequisitionsPage() {
       <PageHeader
         title="Job requisitions"
         subtitle="Define roles, job requirements and approved screening questions (FR-01)."
-        actions={isRecruiter && <Link to="/requisitions/new" className="rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700">New requisition</Link>}
+        actions={hasFullAccess && <Link to="/requisitions/new" className="rounded-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700">New requisition</Link>}
       />
       <Card>
         <div className="mb-4 flex flex-wrap gap-3">

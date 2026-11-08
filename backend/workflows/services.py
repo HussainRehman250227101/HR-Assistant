@@ -38,7 +38,7 @@ def _mark_failed(run, code, message):
         candidate=run.candidate,
         actor=run.created_by,
         event_type=CandidateEvent.EventType.WORKFLOW_FAILED,
-        details={"workflow_run_id": str(run.public_id), "error_code": code},
+        details={"workflow_run_id": str(run.public_id), "error_code": code, "trigger": run.trigger},
     )
 
 
@@ -86,6 +86,7 @@ def start_scoring_workflow(run):
                     "workflow_run_id": str(run.public_id),
                     "evaluation_id": str(run.evaluation.public_id),
                     "status": run.status,
+                    "trigger": run.trigger,
                 },
             )
         else:

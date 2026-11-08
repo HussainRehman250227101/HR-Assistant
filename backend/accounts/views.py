@@ -4,7 +4,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenBlacklistView
 
 from .models import User, UserRole
-from .permissions import IsRecruiterOrAdmin
+from .permissions import IsHRStaff
 from .serializers import UserProfileSerializer
 
 
@@ -18,9 +18,9 @@ class MeView(APIView):
 
 
 class UserDirectoryView(APIView):
-    """Minimal staff directory (for hiring-manager / interviewer pickers). Recruiters and admins only."""
+    """Minimal staff directory (for hiring-manager / interviewer pickers). HR Administrators and Hiring Managers only."""
 
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
         qs = User.objects.filter(is_active=True).order_by("first_name", "last_name", "username")

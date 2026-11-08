@@ -14,7 +14,7 @@ class ShortlistReviewTests(TestCase):
     def setUp(self):
         self.recruiter = User.objects.create_user(
             username="review-recruiter", email="review@example.test",
-            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+            password="Strong-Test-Password-123!", role=UserRole.ADMIN,
         )
         self.manager = User.objects.create_user(
             username="review-manager", email="manager-review@example.test",
@@ -65,6 +65,30 @@ class ShortlistReviewTests(TestCase):
         self.candidate.refresh_from_db()
         self.assertEqual(self.candidate.current_status, CandidateStatus.APPROVED_FOR_SCREENING)
         self.assertEqual(ShortlistReview.objects.count(), 1)
+
+    def test_decline_marks_the_candidate_and_queues_the_rejection_notice_after_the_decision(self):
+        from unittest.mock import patch
+        from candidates.models import CandidateEvent
+
+        with patch("reviews.views.queue_declined_processing") as queue:
+            response = self.client.post(self.url, {
+                "evaluation": str(self.evaluation.public_id), "decision": ShortlistDecision.DECLINE,
+                "decision_reason": "Missing required experience.",
+            }, format="json")
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
+            queue.assert_called_once_with(self.candidate.pk)
+        self.assertTrue(CandidateEvent.objects.filter(
+            candidate=self.candidate, event_type=CandidateEvent.EventType.REJECTION_PENDING).exists())
+
+    def test_approval_does_not_queue_a_rejection_notice(self):
+        from unittest.mock import patch
+
+        with patch("reviews.views.queue_declined_processing") as queue:
+            self.client.post(self.url, {
+                "evaluation": str(self.evaluation.public_id), "decision": ShortlistDecision.APPROVE_FOR_SCREENING,
+                "decision_reason": "",
+            }, format="json")
+            queue.assert_not_called()
 
     def test_decline_requires_reason_and_closes_candidate(self):
         response = self.client.post(self.url, {
@@ -117,8 +141,12 @@ class ShortlistReviewTests(TestCase):
         self.candidate.refresh_from_db()
         self.assertEqual(self.candidate.current_status, CandidateStatus.SCORED_HR_REVIEW)
 
-    def test_hiring_manager_cannot_make_shortlist_decision(self):
-        self.client.force_authenticate(user=self.manager)
+    def test_recruiter_interviewer_cannot_make_shortlist_decision(self):
+        interviewer = User.objects.create_user(
+            username="review-interviewer", email="interviewer-review@example.test",
+            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+        )
+        self.client.force_authenticate(user=interviewer)
         response = self.client.post(self.url, {
             "evaluation": str(self.evaluation.public_id),
             "decision": ShortlistDecision.APPROVE_FOR_SCREENING,
@@ -126,7 +154,7 @@ class ShortlistReviewTests(TestCase):
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_batch_identity_must_be_verified_with_candidate_contact_details(self):
+    def test_approval_is_refused_when_the_resume_had_no_contact_details(self):
         self.candidate.identity_review_required = True
         self.candidate.full_name = ""
         self.candidate.email = None
@@ -135,25 +163,25 @@ class ShortlistReviewTests(TestCase):
         response = self.client.post(self.url, {
             "evaluation": str(self.evaluation.public_id),
             "decision": ShortlistDecision.APPROVE_FOR_SCREENING,
-            "decision_reason": "Approve.",
-            "identity_verified": True,
-            "identity_review_reason": "Checked against the submitted application.",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("candidate_details", response.data)
 
-    def test_recruiter_can_resolve_identity_and_approve_when_details_are_present(self):
+    def test_one_click_approval_confirms_details_read_from_the_resume(self):
+        # Batch-uploaded candidate whose details were filled from the resume: no reason, no checkbox, no typing.
         self.candidate.identity_review_required = True
-        self.candidate.full_name = "Verified Candidate"
+        self.candidate.full_name = "Resume Candidate"
         self.candidate.phone = "+923001234567"
+        self.candidate.auto_filled_fields = ["full_name", "phone"]
         self.candidate.save()
         response = self.client.post(self.url, {
             "evaluation": str(self.evaluation.public_id),
             "decision": ShortlistDecision.APPROVE_FOR_SCREENING,
-            "decision_reason": "Reviewed resume and confirmed contact details.",
-            "identity_verified": True,
-            "identity_review_reason": "Candidate details confirmed by recruiter.",
         }, format="json")
         self.assertEqual(response.status_code, status.HTTP_201_CREATED, response.data)
         self.candidate.refresh_from_db()
         self.assertFalse(self.candidate.identity_review_required)
         self.assertEqual(self.candidate.current_status, CandidateStatus.APPROVED_FOR_SCREENING)
+        self.assertEqual(ShortlistReview.objects.get().decided_by, self.recruiter)
+        event = self.candidate.events.get(event_type="CANDIDATE_IDENTITY_REVIEWED")
+        self.assertEqual(event.details["fields_from_resume"], ["full_name", "phone"])

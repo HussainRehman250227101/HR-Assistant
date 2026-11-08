@@ -28,12 +28,12 @@ export function ShortlistQueuePage() {
                   <span className="text-sm text-slate-400">#{rank + 1}</span>
                   <span className="text-2xl font-semibold">{evaluation.overall_score ?? '—'}</span>
                   <div>
-                    <Link to={`/candidates/${candidate.public_id}?tab=scoring`} className="font-medium text-indigo-700 hover:underline">{candidate.full_name || 'Identity details pending review'}</Link>
+                    <Link to={`/candidates/${candidate.public_id}?tab=scoring`} className="font-medium text-indigo-700 hover:underline">{candidate.full_name || `Candidate ${candidate.public_id.slice(0, 8)}`}</Link>
                     <div className="text-xs text-slate-500">{candidate.requisition_title}</div>
                   </div>
                   <Badge value={evaluation.confidence_level} label={`${evaluation.confidence_level.toLowerCase()} coverage`} />
                   <Badge value={candidate.current_status} />
-                  {candidate.identity_review_required && <Badge tone="amber" label="Identity review" />}
+                  {candidate.identity_review_required && <Badge tone="amber" label="Contact details missing" />}
                 </div>
                 <button className="text-sm text-indigo-700 hover:underline" onClick={() => setExpanded(expanded === candidate.public_id ? null : candidate.public_id)}>
                   {expanded === candidate.public_id ? 'Close' : 'Review evidence & decide'}

@@ -6,8 +6,10 @@ from rest_framework import exceptions, permissions, status
 from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff
 from candidates.models import Candidate, CandidateEvent, CandidateStatus
+from candidates.services.decline import mark_declined
+from candidates.tasks import queue_declined_processing
 from scoring.models import ResumeEvaluation
 from scoring.serializers import EvaluationListSerializer
 from workflows.models import WorkflowRun, WorkflowRunStatus
@@ -20,7 +22,7 @@ REVIEWABLE_STATUSES = {CandidateStatus.SCORED_HR_REVIEW, CandidateStatus.NEEDS_M
 
 
 class ShortlistQueueView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get(self, request):
         queryset = Candidate.objects.filter(
@@ -50,7 +52,7 @@ class ShortlistQueueView(GenericAPIView):
 
 
 class CandidateShortlistDecisionView(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
     serializer_class = ShortlistDecisionRequestSerializer
 
     def post(self, request, candidate_id):
@@ -76,11 +78,9 @@ class CandidateShortlistDecisionView(GenericAPIView):
                 raise exceptions.ValidationError({
                     "decision": "This evaluation has no defensible overall score. Provide a reasoned human score override or keep the candidate for manual review."
                 })
-            if candidate.identity_review_required:
-                if not data.get("identity_verified"):
-                    raise exceptions.ValidationError({"identity_verified": "Confirm candidate identity review before approving screening."})
-                if not candidate.full_name.strip() or not (candidate.email or candidate.phone):
-                    raise exceptions.ValidationError({"candidate_details": "Enter the candidate name and at least one contact method before confirming identity."})
+            # Name and contact details are read from the resume automatically; HR only adds one if the resume had none.
+            if not (candidate.email or candidate.phone):
+                raise exceptions.ValidationError({"candidate_details": "No email or phone number was found in this candidate's resume. Add one with Edit details, then approve."})
 
         previous_status = candidate.current_status
         if data["decision"] == ShortlistDecision.APPROVE_FOR_SCREENING:
@@ -103,19 +103,24 @@ class CandidateShortlistDecisionView(GenericAPIView):
                 decided_by=request.user,
             )
             identity_was_pending = candidate.identity_review_required
+            approving = data["decision"] == ShortlistDecision.APPROVE_FOR_SCREENING
             candidate.current_status = resulting_status
-            if data.get("identity_verified"):
+            if approving:
+                # The recruiter's approval confirms the details the system read from the resume.
                 candidate.identity_review_required = False
             if resulting_status == CandidateStatus.CLOSED:
                 candidate.closed_reason = data["decision_reason"]
                 candidate.save(update_fields=("current_status", "closed_reason", "identity_review_required", "updated_at"))
             else:
                 candidate.save(update_fields=("current_status", "identity_review_required", "updated_at"))
-            if identity_was_pending and data.get("identity_verified"):
+            if identity_was_pending and approving:
                 CandidateEvent.objects.create(
                     candidate=candidate, actor=request.user,
                     event_type=CandidateEvent.EventType.CANDIDATE_IDENTITY_REVIEWED,
-                    details={"review_reason": data.get("identity_review_reason", "")},
+                    details={
+                        "review_reason": data.get("identity_review_reason", "") or "Confirmed by approving the candidate",
+                        "fields_from_resume": list(candidate.auto_filled_fields or []),
+                    },
                 )
             CandidateEvent.objects.create(
                 candidate=candidate, actor=request.user,
@@ -129,6 +134,8 @@ class CandidateShortlistDecisionView(GenericAPIView):
                     "score_override": review.score_override,
                 },
             )
+            if resulting_status == CandidateStatus.CLOSED:
+                mark_declined(candidate, request.user, "SHORTLIST_REVIEW")  # rejection email + data deletion follow
 
         run = WorkflowRun.objects.filter(
             evaluation=evaluation,
@@ -140,6 +147,10 @@ class CandidateShortlistDecisionView(GenericAPIView):
             except Exception:
                 # The decision is durable; POST /api/v1/workflows/<run_uuid>/resume/ retries safely.
                 run.refresh_from_db()
+
+        if resulting_status == CandidateStatus.CLOSED:
+            # After the workflow resume above, so the deletion never races the scoring workflow.
+            queue_declined_processing(candidate.pk)
 
         return Response({
             "review": ShortlistReviewSerializer(review).data,

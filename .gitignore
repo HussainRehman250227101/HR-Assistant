@@ -11,6 +11,7 @@ venv/
 htmlcov/
 backend/db.sqlite3*
 backend/media/
+backend/sent-emails/
 backend/staticfiles/
 frontend/node_modules/
 frontend/dist/
@@ -19,3 +20,8 @@ frontend/.env*
 
 # LangGraph local checkpoint state (never commit workflow state)
 backend/langgraph-checkpoints.sqlite3*
+
+# Celery local broker queue and beat schedule state
+backend/celery-broker.sqlite3*
+backend/celerybeat-schedule*
+backend/celerybeat.pid

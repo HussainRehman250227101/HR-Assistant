@@ -18,7 +18,7 @@ class CommunicationLogSerializer(serializers.ModelSerializer):
         fields = (
             "public_id", "candidate_reference", "interview_reference", "channel", "kind", "template_version",
             "sequence", "recipient", "cc", "subject", "body", "meeting_details", "approval_status",
-            "approved_by_name", "approved_at", "send_status", "send_attempts", "provider", "provider_message_id",
+            "approved_by_name", "approved_at", "auto_sent", "send_status", "send_attempts", "provider", "provider_message_id",
             "sent_at", "error_code", "error_message", "created_by_name", "created_at", "updated_at",
         )
         read_only_fields = fields

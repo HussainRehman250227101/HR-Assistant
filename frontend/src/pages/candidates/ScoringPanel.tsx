@@ -1,5 +1,6 @@
-import { useState, type FormEvent } from 'react'
-import { useEvaluations, useShortlistDecision, useShortlistHistory, useStartScoring } from '../../api/hooks'
+import { useEffect, useState, type FormEvent } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { keys, useAutoScoring, useEvaluations, useShortlistDecision, useShortlistHistory, useStartScoring } from '../../api/hooks'
 import { Alert, Badge, Button, Card, Empty, ErrorAlert, Field, Input, Loading, Select, Textarea } from '../../components/ui'
 import { formatDate, humanize } from '../../lib/format'
 import type { Candidate, Evaluation } from '../../lib/types'
@@ -42,67 +43,95 @@ export function EvaluationView({ evaluation }: { evaluation: Evaluation }) {
   )
 }
 
-export function ShortlistDecisionForm({ candidate, evaluation, onDone }: { candidate: Pick<Candidate, 'public_id' | 'identity_review_required'>; evaluation: Evaluation; onDone?: () => void }) {
+/** Human gate 1 (FR-04): one click approves; decline, hold and score overrides are under "Other decisions". */
+const DECLINE_WARNING =
+  'Declining closes this candidate and sends them a friendly rejection email. Their resume, contact details, screening answers and evaluation notes are then permanently deleted; only their name is kept for HR. This cannot be undone.'
+
+export function ShortlistDecisionForm({ candidate, evaluation, onDone }: { candidate: Pick<Candidate, 'public_id' | 'email' | 'phone'>; evaluation: Evaluation; onDone?: () => void }) {
   const decide = useShortlistDecision(candidate.public_id)
-  const [decision, setDecision] = useState('APPROVE_FOR_SCREENING')
+  const [showOther, setShowOther] = useState(false)
+  const [decision, setDecision] = useState('DECLINE')
   const [reason, setReason] = useState('')
   const [override, setOverride] = useState('')
   const [overrideReason, setOverrideReason] = useState('')
-  const [identityVerified, setIdentityVerified] = useState(false)
-  const [identityReason, setIdentityReason] = useState('')
   const [result, setResult] = useState<string | null>(null)
+  const noContact = !candidate.email && !candidate.phone
+  const noScore = evaluation.overall_score === null
 
-  async function submit(e: FormEvent) {
-    e.preventDefault()
-    const res = await decide.mutateAsync({
-      evaluation: evaluation.public_id, decision, decision_reason: reason,
-      score_override: override === '' ? null : Number(override), score_override_reason: overrideReason,
-      identity_verified: decision === 'APPROVE_FOR_SCREENING' ? identityVerified : false,
-      identity_review_reason: decision === 'APPROVE_FOR_SCREENING' && identityVerified ? identityReason : '',
-    })
+  function done(res: { workflow_status: string | null }) {
     setResult(res.workflow_status && res.workflow_status !== 'COMPLETED'
       ? `Decision saved. Workflow status: ${res.workflow_status} — retry the workflow resume from the scoring panel.`
       : 'Decision recorded.')
-    setReason('')
     onDone?.()
   }
 
+  async function approve() {
+    done(await decide.mutateAsync({ evaluation: evaluation.public_id, decision: 'APPROVE_FOR_SCREENING', decision_reason: '' }))
+  }
+
+  async function submit(e: FormEvent) {
+    e.preventDefault()
+    if (decision === 'DECLINE' && !confirm(DECLINE_WARNING)) return
+    done(await decide.mutateAsync({
+      evaluation: evaluation.public_id, decision, decision_reason: reason,
+      score_override: override === '' ? null : Number(override), score_override_reason: overrideReason,
+    }))
+    setReason('')
+  }
+
   return (
-    <form onSubmit={submit} className="space-y-3">
+    <div className="space-y-3">
       <ErrorAlert error={decide.error} />
       {result && <Alert tone="success">{result}</Alert>}
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Field label="Decision">
-          <Select value={decision} onChange={(e) => setDecision(e.target.value)} options={[
-            { value: 'APPROVE_FOR_SCREENING', label: 'Approve for screening' },
-            { value: 'HOLD_FOR_REVIEW', label: 'Hold for manual review' },
-            { value: 'DECLINE', label: 'Decline (closes candidate)' }]} />
-        </Field>
-        <Field label="Score override (optional)" hint="Never changes the AI evaluation; stored separately">
-          <Input type="number" min={0} max={100} value={override} onChange={(e) => setOverride(e.target.value)} />
-        </Field>
+      {noContact && <Alert tone="warning">No email or phone number was found in this resume. Add one with Edit details, then approve.</Alert>}
+      {noScore && <Alert tone="info">The AI could not calculate a score. To approve, enter a score override under Other decisions.</Alert>}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button onClick={approve} loading={decide.isPending && !showOther} disabled={noContact || noScore}>Approve this candidate</Button>
+        <button type="button" className="text-sm text-slate-600 hover:underline" onClick={() => setShowOther(!showOther)}>
+          {showOther ? 'Hide other decisions' : 'Other decisions (decline, hold, score override)'}
+        </button>
       </div>
-      <Field label="Reason"><Textarea required={decision !== 'APPROVE_FOR_SCREENING'} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Job-related reason for this decision" /></Field>
-      {override !== '' && <Field label="Override reason"><Textarea required value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} /></Field>}
-      {decision === 'APPROVE_FOR_SCREENING' && candidate.identity_review_required && (
-        <div className="space-y-2 rounded-md bg-amber-50 p-3 ring-1 ring-amber-200">
-          <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={identityVerified} onChange={(e) => setIdentityVerified(e.target.checked)} /> I verified this candidate's identity and contact details</label>
-          {identityVerified && <Input required placeholder="How were the details verified?" value={identityReason} onChange={(e) => setIdentityReason(e.target.value)} />}
-        </div>
+      {showOther && (
+        <form onSubmit={submit} className="space-y-3 rounded-md bg-slate-50 p-3 ring-1 ring-slate-200">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Decision">
+              <Select value={decision} onChange={(e) => setDecision(e.target.value)} options={[
+                { value: 'DECLINE', label: 'Decline (rejection email + data deletion)' },
+                { value: 'HOLD_FOR_REVIEW', label: 'Hold for manual review' },
+                { value: 'APPROVE_FOR_SCREENING', label: 'Approve with a score override' }]} />
+            </Field>
+            <Field label="Score override (optional)" hint="Never changes the AI evaluation; stored separately">
+              <Input type="number" min={0} max={100} value={override} onChange={(e) => setOverride(e.target.value)} />
+            </Field>
+          </div>
+          {decision === 'DECLINE' && <Alert tone="warning">{DECLINE_WARNING}</Alert>}
+          <Field label={decision === 'APPROVE_FOR_SCREENING' ? 'Reason (optional)' : 'Reason (required)'}>
+            <Textarea required={decision !== 'APPROVE_FOR_SCREENING'} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Job-related reason for this decision" />
+          </Field>
+          {override !== '' && <Field label="Override reason"><Textarea required value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} /></Field>}
+          <Button type="submit" loading={decide.isPending && showOther} variant={decision === 'DECLINE' ? 'danger' : 'primary'}>Record decision</Button>
+        </form>
       )}
-      <Button type="submit" loading={decide.isPending} variant={decision === 'DECLINE' ? 'danger' : 'primary'}>Record decision</Button>
-    </form>
+    </div>
   )
 }
 
 export function ScoringPanel({ candidate, canEdit }: { candidate: Candidate; canEdit: boolean }) {
-  const evaluations = useEvaluations(candidate.public_id)
+  const hasResume = candidate.resume_documents.some((d) => d.processing_status === 'COMPLETED')
+  const auto = useAutoScoring()
+  const autoCandidate = Boolean(auto.data?.enabled) && candidate.current_status === 'RESUME_RECEIVED' && hasResume
+  const evaluations = useEvaluations(candidate.public_id, autoCandidate)
   const history = useShortlistHistory(candidate.public_id)
   const start = useStartScoring()
   const latest = evaluations.data?.[0]
   const scorable = ['RESUME_RECEIVED', 'NEEDS_MANUAL_REVIEW', 'SCORED_HR_REVIEW'].includes(candidate.current_status)
-  const hasResume = candidate.resume_documents.some((d) => d.processing_status === 'COMPLETED')
   const reviewable = ['SCORED_HR_REVIEW', 'NEEDS_MANUAL_REVIEW'].includes(candidate.current_status)
+  const client = useQueryClient()
+  // A background (Celery) score arrived: refresh the candidate so its new status and the shortlist form appear.
+  useEffect(() => {
+    if (latest && candidate.current_status === 'RESUME_RECEIVED') void client.invalidateQueries({ queryKey: keys.candidates })
+  }, [latest, candidate.current_status, client])
+  const minutes = Math.max(1, Math.round((auto.data?.interval_seconds ?? 120) / 60))
 
   return (
     <div className="space-y-6">
@@ -114,6 +143,11 @@ export function ScoringPanel({ candidate, canEdit }: { candidate: Candidate; can
           <ErrorAlert error={start.error} />
           {start.data && start.data.status !== 'WAITING_HR_REVIEW' && <Alert>{start.data.error_message || 'The scoring workflow did not complete. Check the Azure configuration and retry.'}</Alert>}
           {!hasResume && scorable && <Alert tone="info">A successfully extracted resume is required before scoring.</Alert>}
+          {autoCandidate && !latest && !start.isPending && (
+            <Alert tone="info">
+              Automatic scoring is on: new resumes are scored about every {minutes} minute{minutes === 1 ? '' : 's'} while the Celery worker and beat are running. This page updates when the score is ready; you can also click Score resume now. The score still needs your shortlist decision.
+            </Alert>
+          )}
           {evaluations.isLoading ? <Loading /> : latest ? <EvaluationView evaluation={latest} /> : <Empty>Not scored yet.</Empty>}
         </div>
       </Card>

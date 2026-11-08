@@ -36,8 +36,9 @@ class CandidateAndResumeAPITests(APITestCase):
         self.temp_dir=tempfile.TemporaryDirectory()
         self.media_override=override_settings(MEDIA_ROOT=self.temp_dir.name)
         self.media_override.enable()
-        self.recruiter=User.objects.create_user(username="recruiter4",email="recruiter4@example.test",password="Strong-Test-Password-123!",role=UserRole.RECRUITER)
+        self.recruiter=User.objects.create_user(username="recruiter4",email="recruiter4@example.test",password="Strong-Test-Password-123!",role=UserRole.ADMIN)
         self.manager=User.objects.create_user(username="manager4",email="manager4@example.test",password="Strong-Test-Password-123!",role=UserRole.HIRING_MANAGER)
+        self.interviewer=User.objects.create_user(username="interviewer4",email="interviewer4@example.test",password="Strong-Test-Password-123!",role=UserRole.RECRUITER)
         self.other_manager=User.objects.create_user(username="manager5",email="manager5@example.test",password="Strong-Test-Password-123!",role=UserRole.HIRING_MANAGER)
         self.requisition=Requisition.objects.create(title="Senior Controls Engineer",department="Engineering",description="Industrial controls role.",status=RequisitionStatus.OPEN,created_by=self.recruiter,hiring_manager=self.manager)
         self.client.force_authenticate(user=self.recruiter)
@@ -73,20 +74,44 @@ class CandidateAndResumeAPITests(APITestCase):
         self.assertEqual(response.status_code,status.HTTP_201_CREATED)
         self.assertEqual(Candidate.objects.get().current_status,CandidateStatus.RESUME_RECEIVED)
 
-    def test_hiring_manager_sees_only_candidates_for_assigned_requisitions(self):
+    def assign_interview(self,candidate,interviewer,status_value="SCHEDULED"):
+        from datetime import timedelta
+        from django.utils import timezone
+        from scheduling.models import Interview
+        start=timezone.now()+timedelta(days=3)
+        return Interview.objects.create(candidate=candidate,requisition=candidate.requisition,interviewer=interviewer,timezone="Asia/Karachi",status=status_value,confirmed_start=start,confirmed_end=start+timedelta(minutes=45),mode="ONSITE",location="Office",created_by=self.recruiter)
+
+    def test_recruiter_interviewer_sees_only_candidates_assigned_to_them(self):
         assigned=self.create_candidate()
+        other_req=Requisition.objects.create(title="Automation Engineer",department="Engineering",description="Another role.",status=RequisitionStatus.OPEN,created_by=self.recruiter,hiring_manager=self.other_manager)
+        not_assigned=Candidate.objects.create(requisition=other_req,full_name="Other Candidate",email="other@example.test",created_by=self.recruiter)
+        cancelled=Candidate.objects.create(requisition=other_req,full_name="Cancelled Candidate",email="cancelled@example.test",created_by=self.recruiter)
+        self.assign_interview(assigned,self.interviewer)
+        self.assign_interview(cancelled,self.interviewer,"CANCELLED")
+        self.client.force_authenticate(user=self.interviewer)
+        response=self.client.get(self.list_url)
+        self.assertEqual(response.status_code,status.HTTP_200_OK)
+        self.assertEqual([c["public_id"] for c in response.data["results"]],[str(assigned.public_id)])
+        detail=self.client.get(reverse("candidates:candidate-detail",args=[not_assigned.public_id]))
+        self.assertEqual(detail.status_code,status.HTTP_404_NOT_FOUND)
+
+    def test_hiring_manager_has_full_access_to_every_candidate(self):
+        self.create_candidate()
         other_req=Requisition.objects.create(title="Automation Engineer",department="Engineering",description="Another role.",status=RequisitionStatus.OPEN,created_by=self.recruiter,hiring_manager=self.other_manager)
         Candidate.objects.create(requisition=other_req,full_name="Other Candidate",email="other@example.test",created_by=self.recruiter)
         self.client.force_authenticate(user=self.manager)
-        response=self.client.get(self.list_url)
-        self.assertEqual(response.status_code,status.HTTP_200_OK)
-        self.assertEqual(len(response.data["results"]),1)
-        self.assertEqual(response.data["results"][0]["public_id"],str(assigned.public_id))
+        self.assertEqual(len(self.client.get(self.list_url).data["results"]),2)
+        created=self.client.post(self.list_url,{**self.payload,"email":"hm.created@example.test"},format="json")
+        self.assertEqual(created.status_code,status.HTTP_201_CREATED)
 
-    def test_hiring_manager_cannot_create_candidates(self):
-        self.client.force_authenticate(user=self.manager)
+    def test_recruiter_interviewer_cannot_create_or_edit_candidates(self):
+        candidate=self.create_candidate()
+        self.assign_interview(candidate,self.interviewer)
+        self.client.force_authenticate(user=self.interviewer)
         response=self.client.post(self.list_url,self.payload,format="json")
         self.assertEqual(response.status_code,status.HTTP_403_FORBIDDEN)
+        edit=self.client.patch(reverse("candidates:candidate-detail",args=[candidate.public_id]),{"full_name":"Changed"},format="json")
+        self.assertEqual(edit.status_code,status.HTTP_403_FORBIDDEN)
 
     def test_upload_accepts_docx_and_queues_it_without_exposing_text(self):
         candidate=self.create_candidate()
@@ -145,11 +170,12 @@ class CandidateAndResumeAPITests(APITestCase):
         self.assertEqual(response.status_code,status.HTTP_200_OK)
         self.assertNotIn("extracted_text",response.data)
 
-    def test_hiring_manager_cannot_download_resume(self):
+    def test_recruiter_interviewer_cannot_download_resume(self):
         candidate=self.create_candidate()
         self.client.post(self.upload_url(candidate),{"file":make_docx()},format="multipart")
         doc=ResumeDocument.objects.get(candidate=candidate)
-        self.client.force_authenticate(user=self.manager)
+        self.assign_interview(candidate,self.interviewer)
+        self.client.force_authenticate(user=self.interviewer)
         response=self.client.get(reverse("candidates:resume-document-download",args=[doc.public_id]))
         self.assertEqual(response.status_code,status.HTTP_403_FORBIDDEN)
 

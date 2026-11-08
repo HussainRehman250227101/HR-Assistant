@@ -27,10 +27,17 @@ class CandidateSerializer(serializers.ModelSerializer):
             "public_id", "requisition", "full_name", "display_name", "email", "phone",
             "location", "linkedin_url", "source", "contact_consent_status",
             "recording_consent_status", "consent_preferences", "current_status",
-            "identity_review_required", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name",
+            "identity_review_required", "auto_filled_fields", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name",
             "resume_documents", "created_at", "updated_at",
         )
-        read_only_fields = ("public_id", "display_name", "current_status", "identity_review_required", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
+        read_only_fields = ("public_id", "display_name", "current_status", "identity_review_required", "auto_filled_fields", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
+
+    def update(self, instance, validated_data):
+        # A field a recruiter edits is no longer "from the resume".
+        edited = {f for f, v in validated_data.items() if f in (instance.auto_filled_fields or []) and v != getattr(instance, f)}
+        if edited:
+            instance.auto_filled_fields = [f for f in instance.auto_filled_fields if f not in edited]
+        return super().update(instance, validated_data)
 
     @staticmethod
     def get_created_by_name(obj):
@@ -38,7 +45,7 @@ class CandidateSerializer(serializers.ModelSerializer):
 
     @staticmethod
     def get_display_name(obj):
-        return obj.full_name or "Identity details pending review"
+        return obj.full_name or f"Candidate {str(obj.public_id)[:8]}"
 
     def validate_email(self, value):
         return value.strip().lower() if value else None

@@ -11,6 +11,7 @@ class MessageKind(models.TextChoices):
     INTERVIEW_INVITATION = "INTERVIEW_INVITATION", "Interview invitation"
     INTERVIEW_RESCHEDULE = "INTERVIEW_RESCHEDULE", "Interview rescheduled"
     INTERVIEW_CANCELLATION = "INTERVIEW_CANCELLATION", "Interview cancellation"
+    REJECTION = "REJECTION", "Application update (rejection)"
 
 
 class ApprovalStatus(models.TextChoices):
@@ -43,6 +44,7 @@ class CommunicationLog(models.Model):
     approval_status = models.CharField(max_length=10, choices=ApprovalStatus.choices, default=ApprovalStatus.DRAFT, db_index=True)
     approved_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, null=True, blank=True, related_name="communications_approved")
     approved_at = models.DateTimeField(null=True, blank=True)
+    auto_sent = models.BooleanField(default=False, help_text="Sent automatically under HR's screening approval, without a separate send approval.")
     send_status = models.CharField(max_length=10, choices=SendStatus.choices, default=SendStatus.NOT_SENT, db_index=True)
     send_attempts = models.PositiveSmallIntegerField(default=0)
     provider = models.CharField(max_length=120, blank=True)

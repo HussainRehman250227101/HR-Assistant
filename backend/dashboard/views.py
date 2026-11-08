@@ -1,6 +1,6 @@
 """Read-only dashboard (SRS §5 scope, FR-12, FR-13, AC-09): lifecycle counts, actionable work, pipeline, audit log.
 
-Every query is scoped through `candidates_visible_to`, so hiring managers only see their requisitions.
+Every query is scoped through `candidates_visible_to`, so an interviewer-only recruiter sees just their assigned candidates.
 """
 
 from datetime import timedelta
@@ -16,7 +16,7 @@ from candidates.models import CandidateEvent, CandidateStatus, ResumeDocument, R
 from candidates.serializers import CandidateEventSerializer
 from candidates.views import candidates_visible_to
 from communications.models import ApprovalStatus, CommunicationLog, SendStatus
-from accounts.models import UserRole
+from accounts.permissions import has_full_access
 from requisitions.models import Requisition, RequisitionStatus
 from scheduling.models import Interview, InterviewStatus
 from scoring.models import ResumeEvaluation
@@ -57,7 +57,7 @@ class DashboardSummaryView(APIView):
              WorkflowRun.objects.filter(candidate__in=candidates, status=WorkflowRunStatus.FAILED).count()),
             ("APPROVED_NOT_SCREENED", "Approved for screening, not yet contacted", "/candidates?status=APPROVED_FOR_SCREENING", "info",
              candidates.filter(current_status=CandidateStatus.APPROVED_FOR_SCREENING).count()),
-            ("CALLS_PENDING", "Screening calls to place", "/screening", "info",
+            ("CALLS_PENDING", "AI screenings to run (browser session or call)", "/screening", "info",
              screenings.filter(status=ScreeningStatus.PENDING_CALL).count()),
             ("SCREENING_ANALYSIS_FAILED", "Screening analysis failures", "/screening", "critical",
              screenings.filter(status=ScreeningStatus.ANALYSIS_FAILED).count()),
@@ -82,8 +82,8 @@ class DashboardSummaryView(APIView):
             status=InterviewStatus.SCHEDULED, confirmed_start__gte=now, confirmed_start__lte=now + timedelta(days=14),
         ).select_related("candidate", "interviewer", "requisition").order_by("confirmed_start")[:10]
         requisitions = Requisition.objects.filter(status=RequisitionStatus.OPEN)
-        if not (request.user.is_superuser or request.user.role in (UserRole.ADMIN, UserRole.RECRUITER)):
-            requisitions = requisitions.filter(hiring_manager=request.user)
+        if not has_full_access(request.user):
+            requisitions = requisitions.filter(interviews__interviewer=request.user).distinct()
         return Response({
             "generated_at": now,
             "total_candidates": sum(status_counts.values()),

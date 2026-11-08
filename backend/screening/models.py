@@ -9,7 +9,11 @@ from django.db.models import Q
 
 class ScreeningChannel(models.TextChoices):
     AI_VOICE = "AI_VOICE", "AI voice call (Twilio + ElevenLabs)"
+    BROWSER_VOICE = "BROWSER_VOICE", "Browser voice session (ElevenLabs WebRTC, no phone call)"
     HUMAN_LED = "HUMAN_LED", "Human-led screening"
+
+
+AI_SCREENING_CHANNELS = (ScreeningChannel.AI_VOICE, ScreeningChannel.BROWSER_VOICE)
 
 
 class ScreeningStatus(models.TextChoices):
@@ -48,6 +52,9 @@ class CallOutcome(models.TextChoices):
     POOR_AUDIO = "POOR_AUDIO", "Poor audio / could not understand"
     RESCHEDULE_REQUESTED = "RESCHEDULE_REQUESTED", "Candidate asked to reschedule"
     INCOMPLETE = "INCOMPLETE", "Incomplete"
+    # Browser voice sessions (Module 16)
+    INTERRUPTED = "INTERRUPTED", "Interrupted (connection lost)"
+    ABANDONED = "ABANDONED", "Abandoned (never connected or no candidate speech)"
 
 
 class ScreeningConsent(models.TextChoices):
@@ -66,11 +73,17 @@ class NextStepRecommendation(models.TextChoices):
     RETRY_CALL = "RETRY_CALL", "Retry the call"
 
 
+class SalaryPeriod(models.TextChoices):
+    MONTHLY = "MONTHLY", "Per month"
+    ANNUAL = "ANNUAL", "Per year"
+    UNSPECIFIED = "UNSPECIFIED", "Period not stated"
+
+
 class Screening(models.Model):
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
     candidate = models.ForeignKey("candidates.Candidate", on_delete=models.PROTECT, related_name="screenings")
     requisition = models.ForeignKey("requisitions.Requisition", on_delete=models.PROTECT, related_name="screenings")
-    channel = models.CharField(max_length=12, choices=ScreeningChannel.choices, default=ScreeningChannel.AI_VOICE)
+    channel = models.CharField(max_length=16, choices=ScreeningChannel.choices, default=ScreeningChannel.AI_VOICE)
     status = models.CharField(max_length=24, choices=ScreeningStatus.choices, default=ScreeningStatus.PENDING_CALL, db_index=True)
     call_status = models.CharField(max_length=24, choices=CallOutcome.choices, default=CallOutcome.NOT_STARTED)
     consent_status = models.CharField(max_length=10, choices=ScreeningConsent.choices, default=ScreeningConsent.NOT_ASKED)
@@ -83,6 +96,16 @@ class Screening(models.Model):
     # SRS §8 minimum output fields
     question_answer_pairs = models.JSONField(default=list, blank=True)
     candidate_stated_availability = models.TextField(blank=True)
+    # Standard answers asked in every screening. *_statement fields hold the candidate's own words,
+    # verified against the transcript; the other values are kept only when that quote is verified.
+    availability_statement = models.TextField(blank=True)
+    expected_salary_min = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    expected_salary_max = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    expected_salary_currency = models.CharField(max_length=3, blank=True)
+    expected_salary_period = models.CharField(max_length=12, choices=SalaryPeriod.choices, blank=True)
+    expected_salary_statement = models.TextField(blank=True)
+    notice_period = models.CharField(max_length=300, blank=True)
+    notice_period_statement = models.TextField(blank=True)
     role_requirement_responses = models.JSONField(default=list, blank=True)
     candidate_questions = models.JSONField(default=list, blank=True)
     unresolved_questions = models.JSONField(default=list, blank=True)
@@ -121,7 +144,7 @@ class Screening(models.Model):
 
 class ScreeningDecision(models.TextChoices):
     APPROVE_FOR_INTERVIEW = "APPROVE_FOR_INTERVIEW", "Approve for interview"
-    RESCREEN_AI_CALL = "RESCREEN_AI_CALL", "Re-screen with a new AI call"
+    RESCREEN_AI_CALL = "RESCREEN_AI_CALL", "Re-screen with a new AI voice screening"
     RESCREEN_HUMAN_LED = "RESCREEN_HUMAN_LED", "Re-screen with a human-led screening"
     DECLINE = "DECLINE", "Decline (close candidate)"
 
@@ -157,7 +180,10 @@ class CallAttemptStatus(models.TextChoices):
 
 
 class ScreeningCallAttempt(models.Model):
-    """One outbound call. Append-only audit of every call attempt (SRS §13)."""
+    """One outbound call or one browser voice session. Append-only audit of every attempt (SRS §13).
+
+    Browser sessions use provider `elevenlabs_webrtc` and have no telephone destination or Twilio SID.
+    """
 
     public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
     screening = models.ForeignKey(Screening, on_delete=models.PROTECT, related_name="call_attempts")

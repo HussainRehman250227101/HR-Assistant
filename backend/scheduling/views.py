@@ -10,27 +10,26 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.models import UserRole
-from accounts.permissions import IsRecruiterOrAdmin
+from accounts.permissions import IsHRStaff, has_full_access
 from candidates.views import candidates_visible_to
 from .models import ACTIVE_INTERVIEW_STATUSES, AvailabilitySlot, Interview
 from .serializers import (
     AvailabilityCreateSerializer, AvailabilitySlotSerializer, CancelSerializer, ConfirmSlotSerializer,
     InterviewPlanSerializer, InterviewReproposeSerializer, InterviewSerializer,
 )
+from .services.auto import AutoScheduleOutcome, safe_auto_schedule
 from .services.interviews import cancel_interview, confirm_slot, plan_interview, repropose
 from .services.slots import SchedulingError, local_window_to_utc
 
 
-def is_recruiter(user):
-    return user.is_superuser or getattr(user, "role", None) in (UserRole.ADMIN, UserRole.RECRUITER)
+is_recruiter = has_full_access  # historic name: "may manage everyone's schedule" (HR Administrator / Hiring Manager)
 
 
 def interviews_visible_to(user):
     qs = Interview.objects.select_related("candidate", "requisition", "interviewer", "created_by")
     if is_recruiter(user):
         return qs
-    return qs.filter(Q(candidate__in=candidates_visible_to(user)) | Q(interviewer=user))
+    return qs.filter(interviewer=user)
 
 
 def _bad(exc):
@@ -95,7 +94,7 @@ class CandidateInterviewView(GenericAPIView):
     serializer_class = InterviewPlanSerializer
 
     def get_permissions(self):
-        return [IsRecruiterOrAdmin()] if self.request.method == "POST" else [permissions.IsAuthenticated()]
+        return [IsHRStaff()] if self.request.method == "POST" else [permissions.IsAuthenticated()]
 
     def get(self, request, candidate_id):
         candidate = get_object_or_404(candidates_visible_to(request.user), public_id=candidate_id)
@@ -112,13 +111,33 @@ class CandidateInterviewView(GenericAPIView):
         return Response(InterviewSerializer(interview).data, status=status.HTTP_201_CREATED)
 
 
+class CandidateAutoScheduleView(APIView):
+    """Run the scheduling agent for one candidate now (after HR fixed availability, requisition details or email)."""
+
+    permission_classes = [IsHRStaff]
+
+    def post(self, request, candidate_id):
+        candidate = get_object_or_404(candidates_visible_to(request.user), public_id=candidate_id)
+        outcome = safe_auto_schedule(candidate.pk)
+        interview = Interview.objects.filter(candidate=candidate).order_by("-created_at").first()
+        message = {
+            AutoScheduleOutcome.SCHEDULED: "Interview scheduled and the invitation was sent.",
+            AutoScheduleOutcome.NEEDS_HR: "The agent could not finish scheduling. See the candidate's activity for the reason.",
+            AutoScheduleOutcome.SKIPPED: "Nothing to schedule: the candidate is not waiting for an interview, or one already exists.",
+        }[outcome]
+        return Response({
+            "outcome": outcome, "detail": message,
+            "interview": InterviewSerializer(interview).data if interview else None,
+        })
+
+
 class InterviewDetailView(APIView):
     def get(self, request, public_id):
         return Response(InterviewSerializer(get_object_or_404(interviews_visible_to(request.user), public_id=public_id)).data)
 
 
 class _InterviewAction(GenericAPIView):
-    permission_classes = [IsRecruiterOrAdmin]
+    permission_classes = [IsHRStaff]
 
     def get_interview(self, public_id):
         return get_object_or_404(interviews_visible_to(self.request.user), public_id=public_id)

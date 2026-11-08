@@ -8,11 +8,13 @@ from .models import ShortlistDecision, ShortlistReview
 class ShortlistDecisionRequestSerializer(serializers.Serializer):
     evaluation = serializers.UUIDField(help_text="Public UUID of the candidate's latest AI evaluation.")
     decision = serializers.ChoiceField(choices=ShortlistDecision.choices)
-    decision_reason = serializers.CharField(max_length=2000, trim_whitespace=True)
+    # Approval is one click ("Approve this candidate"): the reason is optional. Declines and holds need one (FR-04).
+    decision_reason = serializers.CharField(max_length=2000, trim_whitespace=True, required=False, allow_blank=True, default="")
     score_override = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=100)
     score_override_reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    # Kept for API compatibility. Approving now confirms the details read from the resume.
     identity_verified = serializers.BooleanField(required=False, default=False)
-    identity_review_reason = serializers.CharField(required=False, allow_blank=True, max_length=1000)
+    identity_review_reason = serializers.CharField(required=False, allow_blank=True, max_length=1000, default="")
 
     def validate(self, attrs):
         decision = attrs["decision"]
@@ -25,13 +27,8 @@ class ShortlistDecisionRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError({"score_override_reason": "Explain every manual score override."})
         if override is None and override_reason:
             raise serializers.ValidationError({"score_override": "Provide a score override when supplying an override reason."})
-        identity_reason = attrs.get("identity_review_reason", "").strip()
         if attrs.get("identity_verified") and decision != ShortlistDecision.APPROVE_FOR_SCREENING:
             raise serializers.ValidationError({"identity_verified": "Identity confirmation is only relevant when approving screening."})
-        if attrs.get("identity_verified") and not identity_reason:
-            raise serializers.ValidationError({"identity_review_reason": "Explain how candidate identity/contact details were checked."})
-        if identity_reason and not attrs.get("identity_verified"):
-            raise serializers.ValidationError({"identity_verified": "Confirm identity review when providing its reason."})
         return attrs
 
 

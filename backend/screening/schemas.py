@@ -18,6 +18,26 @@ class RoleRequirementResponse(BaseModel):
     status: Literal["CONFIRMED", "PARTIAL", "NOT_CONFIRMED", "UNCLEAR"]
 
 
+AnswerStatus = Literal["STATED", "DECLINED_TO_ANSWER", "NOT_ASKED", "UNCLEAR"]
+
+
+class SalaryExpectation(BaseModel):
+    """Standard question asked in every screening. Numbers are kept only if the quote is verified."""
+
+    status: AnswerStatus
+    minimum: float | None = Field(description="Lowest expected salary as a plain number (150k -> 150000); null if not stated.")
+    maximum: float | None = Field(description="Highest expected salary; equal to minimum if one figure was given; null if not stated.")
+    currency: str = Field(description="ISO 4217 code only if stated or unambiguous ('rupees' -> PKR, 'dollars' -> USD); else empty.")
+    period: Literal["MONTHLY", "ANNUAL", "UNSPECIFIED"]
+    candidate_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
+
+
+class StatedAnswer(BaseModel):
+    status: AnswerStatus
+    summary: str = Field(description="Short neutral summary of what the candidate said; empty if not stated.")
+    candidate_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
+
+
 class ScreeningAnalysisOutput(BaseModel):
     call_outcome: Literal[
         "COMPLETED", "CONSENT_DECLINED", "HUMAN_REQUESTED", "STOPPED_BY_CANDIDATE",
@@ -26,7 +46,9 @@ class ScreeningAnalysisOutput(BaseModel):
     consent_status: Literal["GRANTED", "DECLINED", "NOT_ASKED", "UNCLEAR"]
     ai_disclosure_given: bool
     question_answers: list[QuestionAnswer]
-    candidate_stated_availability: str
+    salary_expectation: SalaryExpectation
+    notice_period: StatedAnswer = Field(description="Notice period or earliest start date.")
+    interview_availability: StatedAnswer = Field(description="Days/times (and time zone) the candidate can interview.")
     role_requirement_responses: list[RoleRequirementResponse]
     candidate_questions: list[str]
     unresolved_questions: list[str]

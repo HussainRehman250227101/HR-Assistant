@@ -56,12 +56,17 @@ def _job_context(requisition):
 
 def _redact_contact_details(text, candidate):
     """Remove obvious direct identifiers before sending resume text to the LLM."""
-    if candidate.full_name:
-        text = re.sub(re.escape(candidate.full_name), "[CANDIDATE NAME]", text, flags=re.IGNORECASE)
+    if candidate.full_name.strip():
+        name_pattern = r"\s+".join(re.escape(token) for token in candidate.full_name.split())
+        text = re.sub(name_pattern, "[CANDIDATE NAME]", text, flags=re.IGNORECASE)
     if candidate.email:
         text = re.sub(re.escape(candidate.email), "[EMAIL]", text, flags=re.IGNORECASE)
     if candidate.phone:
         text = text.replace(candidate.phone, "[PHONE]")
+    if candidate.location:
+        text = re.sub(re.escape(candidate.location), "[LOCATION]", text, flags=re.IGNORECASE)
+    # Profile URLs usually contain the person's name.
+    text = re.sub(r"(?:https?://)?(?:[a-z]{2,3}\.)?linkedin\.com/\S+", "[PROFILE URL]", text, flags=re.IGNORECASE)
     text = re.sub(
         r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b",
         "[EMAIL]",

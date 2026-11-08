@@ -1,5 +1,6 @@
 """Candidate and resume intake APIs with role-aware access."""
 
+import logging
 from pathlib import PurePath
 
 from django.conf import settings
@@ -15,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.models import UserRole
-from accounts.permissions import IsHRAdmin, IsRecruiterOrAdmin
+from accounts.permissions import IsHRAdmin, IsHRStaff, has_full_access
 from requisitions.models import Requisition, RequisitionStatus
 from .models import Candidate, CandidateEvent, CandidateStatus, ResumeDocument, ResumeProcessingStatus
 from .serializers import CandidateEventSerializer, CandidateSerializer, ResumeBatchUploadSerializer, ResumeDocumentDetailSerializer, ResumeDocumentSummarySerializer, ResumeUploadSerializer
@@ -24,17 +25,34 @@ from .services.processing import process_resume_document, queue_resume_retry
 from .validators import calculate_sha256, safe_filename, validate_resume_upload
 
 
+logger=logging.getLogger(__name__)
+
+
 def candidates_visible_to(user):
     qs=Candidate.objects.select_related("requisition","created_by","requisition__hiring_manager").prefetch_related("resume_documents")
-    if user.is_superuser or user.role in (UserRole.ADMIN,UserRole.RECRUITER):
+    if has_full_access(user):
         return qs
-    if user.role == UserRole.HIRING_MANAGER:
-        return qs.filter(requisition__hiring_manager=user)
+    if user.role == UserRole.RECRUITER:  # interviewer only: just the candidates with a live interview assigned to them
+        return qs.filter(interviews__interviewer=user).exclude(interviews__status="CANCELLED").distinct()
     return qs.none()
 
 
 def documents_visible_to(user):
     return ResumeDocument.objects.select_related("candidate","candidate__requisition","candidate__requisition__hiring_manager").filter(candidate__in=candidates_visible_to(user))
+
+
+def _queue_auto_processing():
+    """After the upload commits, ask the Celery worker to extract + score now instead of waiting for beat.
+
+    Best effort: if the broker is unavailable the upload still succeeds and the scheduled cycle picks it up.
+    """
+    def enqueue():
+        try:
+            from workflows.tasks import auto_score_new_resumes  # local import avoids a candidates<->workflows cycle
+            auto_score_new_resumes.delay()
+        except Exception as exc:
+            logger.warning("Could not queue automatic processing. exception_type=%s", type(exc).__name__)
+    transaction.on_commit(enqueue)
 
 
 def _save_resume(candidate,upload,actor,content_type,checksum=None):
@@ -67,7 +85,7 @@ class CandidateViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if getattr(self,"action",None) in {"create","update","partial_update"}:
-            return [IsRecruiterOrAdmin()]
+            return [IsHRStaff()]
         return [permissions.IsAuthenticated()]
 
     def get_queryset(self):
@@ -101,7 +119,7 @@ class CandidateViewSet(viewsets.ModelViewSet):
 
 class CandidateResumeUploadView(GenericAPIView):
     parser_classes=[MultiPartParser,FormParser]
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
     serializer_class=ResumeUploadSerializer
 
     def post(self,request,public_id):
@@ -121,6 +139,7 @@ class CandidateResumeUploadView(GenericAPIView):
                     candidate.current_status=CandidateStatus.RESUME_RECEIVED
                     candidate.save(update_fields=("current_status","updated_at"))
                     CandidateEvent.objects.create(candidate=candidate,actor=request.user,event_type=CandidateEvent.EventType.STATUS_CHANGED,details={"to":CandidateStatus.RESUME_RECEIVED,"reason":"New resume uploaded"})
+                _queue_auto_processing()
         except IntegrityError as exc:
             raise exceptions.ValidationError({"file":"A duplicate resume could not be saved."}) from exc
         return Response(ResumeDocumentSummarySerializer(document).data,status=status.HTTP_201_CREATED)
@@ -128,7 +147,7 @@ class CandidateResumeUploadView(GenericAPIView):
 
 class RequisitionResumeBatchUploadView(GenericAPIView):
     parser_classes=[MultiPartParser,FormParser]
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
     serializer_class=ResumeBatchUploadSerializer
 
     def get(self,request,reference_code):
@@ -168,6 +187,7 @@ class RequisitionResumeBatchUploadView(GenericAPIView):
                     CandidateEvent.objects.create(candidate=candidate,actor=request.user,event_type=CandidateEvent.EventType.CANDIDATE_CREATED,details={"requisition_reference":str(requisition.reference_code),"identity_review_required":True,"intake_method":"BATCH_RESUME_UPLOAD"})
                     document=_save_resume(candidate,upload,request.user,mime,digest)
                     result.append((candidate,document))
+                _queue_auto_processing()
         except IntegrityError as exc:
             raise exceptions.ValidationError({"files":"The batch could not be saved because it contains duplicate data."}) from exc
         return Response({
@@ -187,7 +207,7 @@ class CandidateEventListView(APIView):
 
 
 class CandidateCloseView(APIView):
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
 
     def post(self,request,public_id):
         candidate=get_object_or_404(Candidate,public_id=public_id)
@@ -222,7 +242,7 @@ class ResumeDocumentDetailView(APIView):
 
 
 class ResumeDocumentDownloadView(APIView):
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
 
     def get(self,request,public_id):
         document=get_object_or_404(ResumeDocument.objects.select_related("candidate"),public_id=public_id)
@@ -239,7 +259,7 @@ class ResumeDocumentDownloadView(APIView):
 
 
 class ResumeDocumentProcessView(APIView):
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
 
     def post(self,request,public_id):
         document=get_object_or_404(ResumeDocument.objects.select_related("candidate"),public_id=public_id)
@@ -250,7 +270,7 @@ class ResumeDocumentProcessView(APIView):
 
 
 class ResumeDocumentRetryView(APIView):
-    permission_classes=[IsRecruiterOrAdmin]
+    permission_classes=[IsHRStaff]
 
     def post(self,request,public_id):
         document=get_object_or_404(ResumeDocument.objects.select_related("candidate"),public_id=public_id)

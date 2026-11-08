@@ -44,7 +44,7 @@ function SystemChanges() {
 
 /** Append-only audit trail across all visible candidates (FR-14, SRS §13). */
 export function ActivityLogPage() {
-  const { isRecruiter } = useAuth()
+  const { hasFullAccess } = useAuth()
   const [tab, setTab] = useState<'candidates' | 'system'>('candidates')
   const [eventType, setEventType] = useState('')
   const [page, setPage] = useState(1)
@@ -53,7 +53,7 @@ export function ActivityLogPage() {
   return (
     <>
       <PageHeader title="Audit log" subtitle="Every status change, human approval, call attempt, calendar check and email, newest first." />
-      {isRecruiter && <Tabs value={tab} onChange={setTab} tabs={[{ value: 'candidates', label: 'Candidate events' }, { value: 'system', label: 'Requisition & configuration changes' }]} />}
+      {hasFullAccess && <Tabs value={tab} onChange={setTab} tabs={[{ value: 'candidates', label: 'Candidate events' }, { value: 'system', label: 'Requisition & configuration changes' }]} />}
       {tab === 'system' ? <SystemChanges /> : (
       <Card>
         <div className="mb-4 max-w-xs">

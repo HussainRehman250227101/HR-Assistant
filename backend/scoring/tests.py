@@ -88,7 +88,7 @@ class ScoringServiceTests(TestCase):
     def setUp(self):
         self.recruiter = User.objects.create_user(
             username="score-recruiter", email="score@example.test",
-            password="Strong-Test-Password-123!", role=UserRole.RECRUITER,
+            password="Strong-Test-Password-123!", role=UserRole.ADMIN,
         )
         self.requisition = Requisition.objects.create(
             title="Controls Engineer", department="Engineering",

@@ -12,7 +12,7 @@ class WorkflowRunSerializer(serializers.ModelSerializer):
         model = WorkflowRun
         fields = (
             "public_id", "candidate_reference", "resume_reference",
-            "evaluation_reference", "thread_id", "status", "current_step",
+            "evaluation_reference", "thread_id", "trigger", "status", "current_step",
             "error_code", "error_message", "state_summary",
             "started_at", "completed_at", "created_at", "updated_at",
         )

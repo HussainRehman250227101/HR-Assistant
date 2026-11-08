@@ -41,9 +41,10 @@ SIMPLE_JWT = {
     "REFRESH_TOKEN_LIFETIME": timedelta(minutes=env.int("JWT_REFRESH_TOKEN_MINUTES", default=60 * 12)),
 }
 
-# Live candidate calls require a verified webhook so call results cannot be forged.
-if ELEVENLABS_API_KEY and not ELEVENLABS_WEBHOOK_SECRET:  # noqa: F405
-    raise ImproperlyConfigured("Set ELEVENLABS_WEBHOOK_SECRET when ElevenLabs calling is enabled in production.")
+# Live candidate phone calls require a verified webhook so call results cannot be forged. Browser voice
+# sessions (the default mode) fetch results from ElevenLabs on demand and need no webhook.
+if SCREENING_VOICE_MODE == "telephony" and ELEVENLABS_API_KEY and not ELEVENLABS_WEBHOOK_SECRET:  # noqa: F405
+    raise ImproperlyConfigured("Set ELEVENLABS_WEBHOOK_SECRET when ElevenLabs telephone calling is enabled in production.")
 
 if EMAIL_BACKEND.endswith("console.EmailBackend"):  # noqa: F405
     import warnings
