@@ -156,6 +156,8 @@ if LANGGRAPH_STRICT_MSGPACK:
 # extracts pending resumes and starts the LangGraph scoring workflow for new ones. The human shortlist gate
 # is unchanged. Run `celery -A config worker --pool=solo` and `celery -A config beat` (see README).
 AUTO_SCORING_ENABLED = env.bool("AUTO_SCORING_ENABLED", default=True)
+# Resumes extracted concurrently (the per-resume Azure name/location call dominates the time). 1 = sequential.
+RESUME_EXTRACTION_WORKERS = env.int("RESUME_EXTRACTION_WORKERS", default=4)
 AUTO_SCORING_INTERVAL_SECONDS = env.int("AUTO_SCORING_INTERVAL_SECONDS", default=120)
 AUTO_SCORING_BATCH_LIMIT = env.int("AUTO_SCORING_BATCH_LIMIT", default=10)
 if AUTO_SCORING_INTERVAL_SECONDS < 30 or AUTO_SCORING_BATCH_LIMIT < 1:

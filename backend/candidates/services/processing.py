@@ -69,6 +69,37 @@ def process_resume_document(document, actor=None):
     return document
 
 
+def process_documents_parallel(document_ids, actor=None):
+    """Extract several resumes concurrently. The slow step is the per-resume Azure call that reads the name and
+    location, so a small thread pool (`RESUME_EXTRACTION_WORKERS`) cuts a batch from N x latency to about one.
+    Each document is claimed atomically, so overlapping callers never process the same file twice.
+    """
+    from concurrent.futures import ThreadPoolExecutor
+    from django.conf import settings
+    from django.db import connection
+
+    def work(document_id):
+        try:
+            process_resume_document(ResumeDocument.objects.get(pk=document_id), actor=actor)
+        except Exception as exc:  # never log resume content or paths
+            logger.error("Resume extraction failed. exception_type=%s", type(exc).__name__)
+
+    def pool_work(document_id):
+        try:
+            work(document_id)
+        finally:
+            connection.close()  # each pool thread owns its own DB connection
+
+    ids = list(document_ids)
+    if len(ids) <= 1 or settings.RESUME_EXTRACTION_WORKERS <= 1:
+        for document_id in ids:
+            work(document_id)
+        return len(ids)
+    with ThreadPoolExecutor(max_workers=settings.RESUME_EXTRACTION_WORKERS) as pool:
+        list(pool.map(pool_work, ids))
+    return len(ids)
+
+
 def queue_resume_retry(document,actor=None):
     """Retry transient failures only; content-related manual-review cases require intervention."""
     if document.processing_status != ResumeProcessingStatus.FAILED:

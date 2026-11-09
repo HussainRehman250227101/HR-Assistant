@@ -60,7 +60,11 @@ export const useCandidates = (params: Record<string, string | number | undefined
   useQuery({ queryKey: [...keys.candidates, 'list', params], queryFn: () => api<Paginated<Candidate>>(`/candidates/${qs(params)}`) })
 
 export const useCandidate = (id: string | undefined) =>
-  useQuery({ queryKey: [...keys.candidates, id], queryFn: () => api<Candidate>(`/candidates/${id}/`), enabled: Boolean(id) })
+  useQuery({
+    queryKey: [...keys.candidates, id], queryFn: () => api<Candidate>(`/candidates/${id}/`), enabled: Boolean(id),
+    // Text extraction runs automatically after upload: refresh until no resume is waiting.
+    refetchInterval: (q) => (q.state.data?.resume_documents.some((d) => ['PENDING', 'PROCESSING'].includes(d.processing_status)) ? 3000 : false),
+  })
 
 export const useCandidateEvents = (id: string) =>
   useQuery({ queryKey: [...keys.candidates, id, 'events'], queryFn: () => api<CandidateEvent[]>(`/candidates/${id}/events/`) })

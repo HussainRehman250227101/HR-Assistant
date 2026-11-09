@@ -1,8 +1,27 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useRequisitions, useShortlistQueue } from '../api/hooks'
+import { useRequisitions, useShortlistDecision, useShortlistQueue } from '../api/hooks'
+import { QuickDecision } from '../components/QuickDecision'
+import type { ShortlistQueueItem } from '../lib/types'
 import { Badge, Card, Empty, ErrorAlert, Loading, PageHeader, Select } from '../components/ui'
 import { EvaluationView, ShortlistDecisionForm } from './candidates/ScoringPanel'
+
+function RowActions({ item }: { item: ShortlistQueueItem }) {
+  const { candidate, evaluation } = item
+  const decide = useShortlistDecision(candidate.public_id)
+  const noContact = !candidate.email && !candidate.phone
+  const noScore = evaluation.overall_score === null
+  return (
+    <QuickDecision
+      pending={decide.isPending}
+      error={decide.error}
+      approveDisabled={noContact || noScore}
+      approveHint={noContact ? 'No email or phone: open the candidate to add one.' : noScore ? 'No AI score: open the candidate to approve with a score override.' : undefined}
+      onApprove={() => decide.mutateAsync({ evaluation: evaluation.public_id, decision: 'APPROVE_FOR_SCREENING', decision_reason: '' })}
+      onReject={(reason) => decide.mutateAsync({ evaluation: evaluation.public_id, decision: 'DECLINE', decision_reason: reason })}
+    />
+  )
+}
 
 export function ShortlistQueuePage() {
   const [requisition, setRequisition] = useState('')
@@ -21,7 +40,9 @@ export function ShortlistQueuePage() {
       <ErrorAlert error={queue.error} />
       {queue.isLoading ? <Loading /> : !items.length ? <Card><Empty>No candidates are awaiting shortlist review.</Empty></Card> : (
         <div className="space-y-3">
-          {items.map(({ candidate, evaluation }, rank) => (
+          {items.map((item, rank) => {
+            const { candidate, evaluation } = item
+            return (
             <Card key={candidate.public_id}>
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -35,9 +56,12 @@ export function ShortlistQueuePage() {
                   <Badge value={candidate.current_status} />
                   {candidate.identity_review_required && <Badge tone="amber" label="Contact details missing" />}
                 </div>
-                <button className="text-sm text-indigo-700 hover:underline" onClick={() => setExpanded(expanded === candidate.public_id ? null : candidate.public_id)}>
-                  {expanded === candidate.public_id ? 'Close' : 'Review evidence & decide'}
-                </button>
+                <div className="flex flex-wrap items-start gap-4">
+                  <RowActions item={item} />
+                  <button className="pt-1 text-sm text-indigo-700 hover:underline" onClick={() => setExpanded(expanded === candidate.public_id ? null : candidate.public_id)}>
+                    {expanded === candidate.public_id ? 'Close' : 'Review evidence & decide'}
+                  </button>
+                </div>
               </div>
               {expanded === candidate.public_id && (
                 <div className="mt-4 grid gap-6 border-t border-slate-100 pt-4 lg:grid-cols-2">
@@ -46,7 +70,8 @@ export function ShortlistQueuePage() {
                 </div>
               )}
             </Card>
-          ))}
+            )
+          })}
         </div>
       )}
     </>

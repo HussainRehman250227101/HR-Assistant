@@ -130,6 +130,21 @@ class AutoScoringTests(TestCase):
         self.assertEqual(response.status_code, 202)
         self.assertEqual(response.data["trigger"], WorkflowTrigger.MANUAL)
 
+    def test_rescore_while_waiting_for_hr_keeps_the_run_and_follows_the_new_evaluation(self):
+        run_auto_scoring_cycle()
+        run = WorkflowRun.objects.get(candidate=self.candidate)
+        self.assertEqual(run.status, WorkflowRunStatus.WAITING_HR_REVIEW)
+        first = run.evaluation
+        client = APIClient()
+        client.force_authenticate(self.recruiter)
+        response = client.post(f"/api/v1/workflows/candidates/{self.candidate.public_id}/start-scoring/")
+        self.assertEqual(response.status_code, 202)
+        run.refresh_from_db()
+        self.assertEqual(WorkflowRun.objects.filter(candidate=self.candidate).count(), 1)  # no second workflow
+        self.assertEqual(run.status, WorkflowRunStatus.WAITING_HR_REVIEW)
+        self.assertEqual(run.evaluation.version, first.version + 1)
+        self.assertEqual(ResumeEvaluation.objects.filter(candidate=self.candidate).count(), 2)  # old one kept
+
     def test_ineligible_candidates_are_skipped(self):
         self.candidate.current_status = CandidateStatus.CLOSED
         self.candidate.save(update_fields=("current_status",))
@@ -181,7 +196,7 @@ class AutoScoringTests(TestCase):
 
     def test_pending_resumes_are_extracted_first(self):
         pending = self._candidate(self.requisition, resume_status=ResumeProcessingStatus.PENDING)
-        with patch("workflows.auto.process_resume_document") as extract:
+        with patch("candidates.services.processing.process_resume_document") as extract:
             summary = run_auto_scoring_cycle()
         self.assertEqual(summary["extracted"], 1)
         extract.assert_called_once()

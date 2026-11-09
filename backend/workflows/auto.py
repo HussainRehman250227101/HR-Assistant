@@ -26,7 +26,7 @@ from candidates.models import (
     ResumeDocument,
     ResumeProcessingStatus,
 )
-from candidates.services.processing import process_resume_document
+from candidates.services.processing import process_documents_parallel
 from requisitions.models import RequisitionStatus
 from .models import ACTIVE_WORKFLOW_STATUSES, WorkflowRun, WorkflowRunStatus, WorkflowTrigger
 from .services import start_scoring_workflow
@@ -84,13 +84,8 @@ def extract_pending_resumes(limit):
         .order_by("created_at")
         .values_list("pk", flat=True)[:limit]
     )
-    for document_id in ids:
-        try:
-            # Atomic PENDING claim inside the service makes this safe alongside other workers.
-            process_resume_document(ResumeDocument.objects.get(pk=document_id))
-        except Exception as exc:  # keep the cycle going; the document stays visible for manual retry
-            logger.error("Automatic extraction failed. exception_type=%s", type(exc).__name__)
-    return len(ids)
+    # Atomic PENDING claim inside the service makes this safe alongside other workers; failures stay visible for retry.
+    return process_documents_parallel(ids)
 
 
 def release_stale_runs(now):

@@ -1,5 +1,7 @@
 """Endpoints to start, inspect and safely resume candidate scoring workflows."""
 
+import logging
+
 from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.shortcuts import get_object_or_404
@@ -12,8 +14,11 @@ from candidates.models import Candidate, CandidateStatus, ResumeProcessingStatus
 from candidates.views import candidates_visible_to
 from .auto import count_awaiting_scoring
 from .models import WorkflowRun, WorkflowRunStatus, WorkflowTrigger
+from scoring.services.agent import evaluate_candidate_resume
 from .serializers import WorkflowRunSerializer
 from .services import retry_workflow_resume, start_scoring_workflow
+
+logger = logging.getLogger(__name__)
 
 
 class CandidateScoringWorkflowStartView(APIView):
@@ -38,6 +43,8 @@ class CandidateScoringWorkflowStartView(APIView):
                 WorkflowRunStatus.WAITING_HR_REVIEW,
             )
         ).first()
+        if active and active.status == WorkflowRunStatus.WAITING_HR_REVIEW:
+            return self._rescore_waiting_run(request, candidate, active)
         if active:
             raise exceptions.ValidationError({
                 "workflow": f"A workflow is already active: {active.public_id} ({active.status})."
@@ -70,6 +77,29 @@ class CandidateScoringWorkflowStartView(APIView):
             else status.HTTP_503_SERVICE_UNAVAILABLE
         )
         return Response(WorkflowRunSerializer(run).data, status=response_status)
+
+
+    def _rescore_waiting_run(self, request, candidate, run):
+        """Re-score while the run waits for HR: add a new immutable evaluation version, leave the run paused.
+
+        The run (status, checkpoint, gate) is untouched; only its evaluation pointer follows the new latest
+        evaluation, because a shortlist decision must reference the latest one and then resumes this same run.
+        """
+        try:
+            evaluation = evaluate_candidate_resume(candidate.pk, str(run.resume_document.public_id), actor=request.user)
+        except Exception as exc:
+            logger.error("Re-scoring failed. workflow_run=%s exception_type=%s", run.public_id, type(exc).__name__)
+            raise exceptions.APIException("The re-score failed. The previous evaluation and workflow are unchanged; try again.")
+        run.evaluation = evaluation
+        run.state_summary = {
+            **(run.state_summary or {}),
+            "evaluation_public_id": str(evaluation.public_id),
+            "overall_score": evaluation.overall_score,
+            "confidence_level": str(evaluation.confidence_level),
+            "recommendation": str(evaluation.recommendation_for_human_review),
+        }
+        run.save(update_fields=("evaluation", "state_summary", "updated_at"))
+        return Response(WorkflowRunSerializer(run).data, status=status.HTTP_202_ACCEPTED)
 
 
 class AutoScoringStatusView(APIView):

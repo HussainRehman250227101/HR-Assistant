@@ -4,12 +4,31 @@ import { useDashboardSummary, usePipeline, useRequisitions, type DashboardSummar
 import { Badge, Card, Empty, ErrorAlert, Input, Loading, PageHeader, Select, Table, Td } from '../components/ui'
 import { BROWSER_TZ, CANDIDATE_STATUS_LABELS, formatDate, formatInZone, humanize } from '../lib/format'
 
-function StatTile({ label, value, hint }: { label: string; value: number; hint?: string }) {
+const TILE_TONES = {
+  indigo: 'bg-indigo-50 text-indigo-600',
+  emerald: 'bg-emerald-50 text-emerald-600',
+  amber: 'bg-amber-50 text-amber-600',
+  sky: 'bg-sky-50 text-sky-600',
+}
+
+const TILE_ICONS = {
+  people: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM2.5 20c.6-3.4 3.2-5.5 6.5-5.5s5.9 2.1 6.5 5.5M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.9.8 3.1 2.6 3.5 5.2',
+  briefcase: 'M4 8h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1zM9 8V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3M3 13h18',
+  bell: 'M6 9a6 6 0 1 1 12 0c0 6 2 7 2 7H4s2-1 2-7M10 20a2 2 0 0 0 4 0',
+  calendar: 'M5 5h14a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2zM3 10h18M8 3v4M16 3v4',
+}
+
+function StatTile({ label, value, hint, icon, tone }: { label: string; value: number; hint?: string; icon: keyof typeof TILE_ICONS; tone: keyof typeof TILE_TONES }) {
   return (
-    <div className="rounded-lg bg-white p-4 shadow-sm ring-1 ring-slate-200">
-      <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</div>
-      <div className="mt-1 text-3xl font-semibold text-slate-900 tabular-nums">{value}</div>
-      {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+    <div className="flex items-start justify-between gap-3 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 transition-shadow hover:shadow-md">
+      <div>
+        <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</div>
+        <div className="mt-2 text-3xl font-semibold text-slate-900 tabular-nums">{value}</div>
+        {hint && <div className="mt-1 text-xs text-slate-500">{hint}</div>}
+      </div>
+      <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${TILE_TONES[tone]}`}>
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d={TILE_ICONS[icon]} /></svg>
+      </div>
     </div>
   )
 }
@@ -23,8 +42,8 @@ function StatusFunnel({ rows }: { rows: DashboardSummary['by_status'] }) {
       {rows.map((r) => (
         <Link key={r.status} to={`/candidates?status=${r.status}`} role="listitem" className="group relative grid grid-cols-[11rem_1fr_2.5rem] items-center gap-3 rounded px-1 py-0.5 text-sm hover:bg-slate-50">
           <span className="truncate text-slate-600">{CANDIDATE_STATUS_LABELS[r.status] ?? r.label}</span>
-          <span className="h-3 rounded-r bg-slate-100">
-            <span className="block h-3 rounded-r bg-indigo-500 group-hover:bg-indigo-600" style={{ width: `${(r.count / max) * 100}%`, minWidth: r.count ? 4 : 0 }} />
+          <span className="h-3 rounded-full bg-slate-100">
+            <span className="block h-3 rounded-full bg-gradient-to-r from-indigo-400 to-indigo-600" style={{ width: `${(r.count / max) * 100}%`, minWidth: r.count ? 4 : 0 }} />
           </span>
           <span className="text-right font-medium text-slate-800 tabular-nums">{r.count}</span>
           <span className="pointer-events-none absolute -top-8 left-48 z-10 hidden rounded bg-slate-900 px-2 py-1 text-xs whitespace-nowrap text-white shadow group-hover:block">
@@ -101,11 +120,11 @@ export function DashboardPage() {
       <ErrorAlert error={summary.error} />
       {summary.isLoading || !s ? <Loading /> : (
         <div className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <StatTile label="Active candidates" value={s.active_candidates} hint={`${s.total_candidates} total incl. closed`} />
-            <StatTile label="Open requisitions" value={s.open_requisitions} />
-            <StatTile label="Items needing action" value={actionCount} />
-            <StatTile label="Interviews (next 14 days)" value={s.upcoming_interviews.length} />
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatTile label="Active candidates" value={s.active_candidates} hint={`${s.total_candidates} total incl. closed`} icon="people" tone="indigo" />
+            <StatTile label="Open requisitions" value={s.open_requisitions} icon="briefcase" tone="emerald" />
+            <StatTile label="Items needing action" value={actionCount} icon="bell" tone="amber" />
+            <StatTile label="Interviews (next 14 days)" value={s.upcoming_interviews.length} icon="calendar" tone="sky" />
           </div>
           <div className="grid gap-6 lg:grid-cols-2">
             <Card title="Candidates by lifecycle status">
@@ -116,13 +135,13 @@ export function DashboardPage() {
                 <ul className="divide-y divide-slate-100">
                   {s.attention.map((a) => (
                     <li key={a.key}>
-                      <Link to={a.link} className="flex items-center justify-between gap-3 py-2 text-sm hover:bg-slate-50">
+                      <Link to={a.link} className="-mx-2 flex items-center justify-between gap-3 rounded-lg px-2 py-2.5 text-sm transition-colors hover:bg-slate-50">
                         <span className="flex items-center gap-2">
                           <span aria-hidden className={SEVERITY[a.severity].cls}>{SEVERITY[a.severity].icon}</span>
                           <span className={`text-xs font-medium ${SEVERITY[a.severity].cls}`}>{SEVERITY[a.severity].label}</span>
                           <span className="text-slate-700">{a.label}</span>
                         </span>
-                        <span className="font-semibold text-slate-900 tabular-nums">{a.count}</span>
+                        <span className="min-w-8 rounded-full bg-slate-100 px-2.5 py-0.5 text-center text-xs font-semibold text-slate-800 tabular-nums">{a.count}</span>
                       </Link>
                     </li>
                   ))}

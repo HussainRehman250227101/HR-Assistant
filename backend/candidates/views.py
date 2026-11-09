@@ -1,6 +1,7 @@
 """Candidate and resume intake APIs with role-aware access."""
 
 import logging
+import threading
 from pathlib import PurePath
 
 from django.conf import settings
@@ -21,7 +22,7 @@ from requisitions.models import Requisition, RequisitionStatus
 from .models import Candidate, CandidateEvent, CandidateStatus, ResumeDocument, ResumeProcessingStatus
 from .serializers import CandidateEventSerializer, CandidateSerializer, ResumeBatchUploadSerializer, ResumeDocumentDetailSerializer, ResumeDocumentSummarySerializer, ResumeUploadSerializer
 from .services.privacy import PrivacyError, close_candidate, erase_personal_data
-from .services.processing import process_resume_document, queue_resume_retry
+from .services.processing import process_documents_parallel, process_resume_document, queue_resume_retry
 from .validators import calculate_sha256, safe_filename, validate_resume_upload
 
 
@@ -41,12 +42,28 @@ def documents_visible_to(user):
     return ResumeDocument.objects.select_related("candidate","candidate__requisition","candidate__requisition__hiring_manager").filter(candidate__in=candidates_visible_to(user))
 
 
-def _queue_auto_processing():
-    """After the upload commits, ask the Celery worker to extract + score now instead of waiting for beat.
+def _extract_in_background(document_ids):
+    """Extract text for freshly uploaded resumes without needing the Celery worker or an HR click.
+
+    Runs in a daemon thread so the upload response is not delayed. Extraction is claimed atomically, so a
+    concurrent Celery run or manual click can never process the same document twice.
+    """
+    from django.db import connection
+
+    try:
+        process_documents_parallel(document_ids)
+    finally:
+        connection.close()
+
+
+def _queue_auto_processing(document_ids=()):
+    """After the upload commits, extract the new resumes at once, then ask the Celery worker to score.
 
     Best effort: if the broker is unavailable the upload still succeeds and the scheduled cycle picks it up.
     """
     def enqueue():
+        if document_ids:
+            threading.Thread(target=_extract_in_background, args=(list(document_ids),), daemon=True).start()
         try:
             from workflows.tasks import auto_score_new_resumes  # local import avoids a candidates<->workflows cycle
             auto_score_new_resumes.delay()
@@ -139,7 +156,7 @@ class CandidateResumeUploadView(GenericAPIView):
                     candidate.current_status=CandidateStatus.RESUME_RECEIVED
                     candidate.save(update_fields=("current_status","updated_at"))
                     CandidateEvent.objects.create(candidate=candidate,actor=request.user,event_type=CandidateEvent.EventType.STATUS_CHANGED,details={"to":CandidateStatus.RESUME_RECEIVED,"reason":"New resume uploaded"})
-                _queue_auto_processing()
+                _queue_auto_processing([document.pk])
         except IntegrityError as exc:
             raise exceptions.ValidationError({"file":"A duplicate resume could not be saved."}) from exc
         return Response(ResumeDocumentSummarySerializer(document).data,status=status.HTTP_201_CREATED)
@@ -187,7 +204,7 @@ class RequisitionResumeBatchUploadView(GenericAPIView):
                     CandidateEvent.objects.create(candidate=candidate,actor=request.user,event_type=CandidateEvent.EventType.CANDIDATE_CREATED,details={"requisition_reference":str(requisition.reference_code),"identity_review_required":True,"intake_method":"BATCH_RESUME_UPLOAD"})
                     document=_save_resume(candidate,upload,request.user,mime,digest)
                     result.append((candidate,document))
-                _queue_auto_processing()
+                _queue_auto_processing([document.pk for _, document in result])
         except IntegrityError as exc:
             raise exceptions.ValidationError({"files":"The batch could not be saved because it contains duplicate data."}) from exc
         return Response({

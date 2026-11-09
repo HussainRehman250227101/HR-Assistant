@@ -1,6 +1,8 @@
 import { Fragment, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { useScreeningQueue } from '../../api/hooks'
+import { useScreeningAction, useScreeningQueue } from '../../api/hooks'
+import { QuickDecision } from '../../components/QuickDecision'
+import type { Screening } from '../../lib/types'
 import { Badge, Card, Empty, ErrorAlert, Loading, PageHeader, Select, Table, Td } from '../../components/ui'
 import { formatDate, humanize } from '../../lib/format'
 import { ScreeningJobPanel } from './ScreeningJobPanel'
@@ -8,6 +10,19 @@ import { ScreeningResult } from './ScreeningResult'
 import { ScreeningReviewForm } from './ScreeningReviewForm'
 
 const STATUSES = ['', 'AWAITING_HR_REVIEW', 'PENDING_CALL', 'CALL_IN_PROGRESS', 'ANALYSIS_FAILED', 'AWAITING_MANUAL_RESULT']
+
+function RowActions({ screening }: { screening: Screening }) {
+  const action = useScreeningAction()
+  const review = (body: object) => action.mutateAsync({ id: screening.public_id, action: 'review', body })
+  return (
+    <QuickDecision
+      pending={action.isPending}
+      error={action.error}
+      onApprove={() => review({ decision: 'APPROVE_FOR_INTERVIEW', decision_reason: '' })}
+      onReject={(reason) => review({ decision: 'DECLINE', decision_reason: reason })}
+    />
+  )
+}
 
 export function ScreeningQueuePage() {
   const [status, setStatus] = useState('AWAITING_HR_REVIEW')
@@ -40,9 +55,12 @@ export function ScreeningQueuePage() {
                   <Td>{formatDate(s.updated_at)}</Td>
                   <Td>
                     {s.status === 'AWAITING_HR_REVIEW' && (
-                      <button className="text-sm text-indigo-700 hover:underline" onClick={() => setOpen(open === s.public_id ? null : s.public_id)}>
-                        {open === s.public_id ? 'Close' : 'Review'}
-                      </button>
+                      <div className="space-y-2">
+                        <RowActions screening={s} />
+                        <button className="text-sm text-indigo-700 hover:underline" onClick={() => setOpen(open === s.public_id ? null : s.public_id)}>
+                          {open === s.public_id ? 'Close' : 'Detailed review'}
+                        </button>
+                      </div>
                     )}
                   </Td>
                 </tr>

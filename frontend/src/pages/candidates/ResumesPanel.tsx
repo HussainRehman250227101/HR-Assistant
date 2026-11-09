@@ -32,8 +32,8 @@ export function ResumesPanel({ candidate, canEdit }: { candidate: Candidate; can
                   {d.warning_messages.map((w) => <div key={w} className="text-amber-700">{w}</div>)}
                 </Td>
                 <Td className="space-x-1 whitespace-nowrap">
-                  {canEdit && d.processing_status === 'PENDING' && (
-                    <Button size="sm" loading={action.isPending && action.variables?.id === d.public_id} onClick={() => action.mutate({ id: d.public_id, action: 'process' })}>Extract text</Button>
+                  {['PENDING', 'PROCESSING'].includes(d.processing_status) && (
+                    <span className="text-xs text-slate-500">Extracting text automatically…</span>
                   )}
                   {canEdit && d.processing_status === 'FAILED' && (
                     <Button size="sm" variant="secondary" onClick={() => action.mutate({ id: d.public_id, action: 'retry' })}>Retry</Button>

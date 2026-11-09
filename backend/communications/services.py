@@ -7,6 +7,7 @@ Failures keep the draft, record the error and never mark the interview as schedu
 """
 
 import logging
+import smtplib
 import uuid
 
 from django.conf import settings
@@ -140,7 +141,11 @@ def approve_and_send(log, actor, connection=None, automatic=False):
         if sent != 1:
             raise RuntimeError("The email backend did not accept the message.")
     except Exception as exc:  # any provider failure: keep the draft, never claim success
-        logger.warning("Invitation send failed. communication=%s exception_type=%s", log.public_id, type(exc).__name__)
+        # Connection-level SMTP errors carry no addresses, so their text is safe to log; others log only the code.
+        detail = str(exc)[:200] if isinstance(exc, (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError, OSError)) \
+            else f"smtp_code={getattr(exc, 'smtp_code', '')}"
+        logger.warning("Invitation send failed. communication=%s exception_type=%s detail=%s",
+                       log.public_id, type(exc).__name__, detail)
         log.send_status = SendStatus.FAILED
         log.error_code = "EMAIL_SEND_FAILED"
         log.error_message = "The email provider did not accept the message. The draft is kept; check email settings and retry."
