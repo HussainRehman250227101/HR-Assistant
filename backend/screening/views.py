@@ -19,6 +19,7 @@ from .serializers import (
     ScreeningCallAttemptSerializer, ScreeningCreateSerializer, ScreeningReviewRequestSerializer, ScreeningSerializer,
 )
 from .services.browser import SessionState, complete_browser_session, start_browser_session
+from .services.invite import resend_invite, screening_from_token
 from .services.review import review_screening
 from .services.calls import (
     ScreeningError, cancel_screening, create_screening, place_call, record_manual_result,
@@ -267,6 +268,83 @@ class ScreeningBrowserSessionCompleteView(_ScreeningAction):
         payload["session_state"] = state
         payload["session_attempt"] = ScreeningCallAttemptSerializer(attempt).data
         return Response(payload, status=status.HTTP_202_ACCEPTED if state == SessionState.PROCESSING else status.HTTP_200_OK)
+
+
+class ScreeningResendInviteView(_ScreeningAction):
+    """HR re-sends the candidate's screening link (for example after an SMTP failure)."""
+
+    def post(self, request, public_id):
+        screening = self.get_screening(public_id)
+        try:
+            sent = resend_invite(screening, request.user)
+        except ScreeningError as exc:
+            raise exceptions.ValidationError({"detail": str(exc)}) from exc
+        return Response({"sent": sent}, status=status.HTTP_200_OK if sent else status.HTTP_502_BAD_GATEWAY)
+
+
+class _InviteMixin:
+    """Candidate-facing endpoints: no login, a signed expiring token in the URL is the credential."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get_screening(self, _public_id=None):
+        screening = screening_from_token(self.kwargs["token"])
+        if screening is None or screening.channel != "BROWSER_VOICE":
+            raise exceptions.NotFound("This screening link is invalid or has expired.")
+        return screening
+
+
+class ScreeningInviteInfoView(_InviteMixin, APIView):
+    def get(self, request, token):
+        screening = self.get_screening()
+        response = Response({
+            "public_id": str(screening.public_id),
+            "status": screening.status,
+            "role_title": screening.requisition.title,
+            "organization": settings.SCREENING_ORGANIZATION_NAME,
+            "candidate_first_name": (screening.candidate.full_name or "").strip().split(" ")[0],
+            "attempt_count": screening.attempt_count,
+            "max_attempts": screening.max_attempts,
+        })
+        response["Cache-Control"] = "no-store"
+        return response
+
+
+class ScreeningInviteStartView(_InviteMixin, ScreeningBrowserSessionStartView):
+    def post(self, request, token):
+        return super().post(request, None)
+
+    def get_screening(self, public_id=None):
+        screening = _InviteMixin.get_screening(self)
+        self.request.user = screening.created_by  # attempts are attributed to the HR user who approved the candidate
+        return screening
+
+
+class ScreeningInviteCompleteView(_InviteMixin, GenericAPIView):
+    serializer_class = BrowserSessionCompleteSerializer
+
+    def post(self, request, token):
+        screening = self.get_screening()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            attempt, state = complete_browser_session(
+                screening, screening.created_by, attempt_id=data.get("attempt_id"),
+                client_end_reason=data["client_end_reason"], connected=data["connected"],
+                client_conversation_id=data.get("conversation_id") or None,
+            )
+        except ScreeningError as exc:
+            raise exceptions.ValidationError({"detail": str(exc)}) from exc
+        except (VoiceConfigurationError, VoiceProviderError) as exc:
+            raise VoiceProviderUnavailable("The session result could not be retrieved yet. Try again shortly.") from exc
+        # The candidate gets only the session outcome, never answers, summaries or transcripts.
+        return Response({
+            "session_state": state, "status": screening.status, "call_status": screening.call_status,
+            "attempt_count": screening.attempt_count, "max_attempts": screening.max_attempts,
+            "session_attempt": {"outcome": attempt.outcome},
+        }, status=status.HTTP_202_ACCEPTED if state == SessionState.PROCESSING else status.HTTP_200_OK)
 
 
 class ScreeningAgentConfigView(APIView):

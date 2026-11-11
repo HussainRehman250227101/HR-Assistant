@@ -32,6 +32,20 @@ class DashboardTests(APITestCase):
         self.assertIn("SHORTLIST_REVIEW", keys)
         self.assertIn("INTERVIEW_TO_PLAN", keys)
 
+    def test_failed_auto_scheduling_is_a_warning_for_hr(self):
+        b = Candidate.objects.get(full_name="B")
+        CandidateEvent.objects.create(candidate=b, event_type="INTERVIEW_AUTO_SCHEDULE_FAILED",
+                                      details={"reason": "No interviewer has availability in the calendar."})
+        self.client.force_authenticate(self.recruiter)
+        items = {i["key"]: i for i in self.client.get(reverse("dashboard:summary")).data["attention"]}
+        self.assertEqual(items["AUTO_SCHEDULE_FAILED"]["severity"], "warning")
+        self.assertEqual(items["AUTO_SCHEDULE_FAILED"]["count"], 1)
+        self.assertNotIn("INTERVIEW_TO_PLAN", items)
+        # The candidate list flags the same candidate so the UI can show "HR review required".
+        rows = {r["display_name"]: r for r in self.client.get("/api/v1/candidates/").data["results"]}
+        self.assertTrue(rows["B"]["needs_hr_scheduling"])
+        self.assertFalse(rows["A"]["needs_hr_scheduling"])
+
     def test_hiring_manager_sees_everything(self):
         self.client.force_authenticate(self.manager)
         self.assertEqual(self.client.get(reverse("dashboard:summary")).data["total_candidates"], 2)

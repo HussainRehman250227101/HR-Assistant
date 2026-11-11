@@ -17,7 +17,7 @@ from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
 
-from candidates.models import CandidateEvent, CandidateStatus, ConsentStatus
+from candidates.models import Candidate, CandidateEvent, CandidateStatus, ConsentStatus
 from candidates.services.status import change_candidate_status, record_event
 from llm.exceptions import LLMConfigurationError, LLMProviderError
 from requisitions.models import RequisitionStatus
@@ -255,10 +255,38 @@ def _apply_consent_side_effects(screening, actor, result, client):
                 ]
 
 
+def _save_collected_contact_details(screening, actor, collected):
+    """Store details the candidate gave aloud, only into fields that are still empty (never overwrite HR's data)."""
+    if not collected:
+        return
+    locked = Candidate.objects.select_for_update().get(pk=screening.candidate_id)
+    filled, duplicate_email = [], False
+    for field, value in collected.items():
+        if (getattr(locked, field) or "").strip():
+            continue
+        if field == "email" and Candidate.objects.filter(
+            requisition_id=locked.requisition_id, email__iexact=value).exclude(pk=locked.pk).exists():
+            duplicate_email = True
+            continue
+        setattr(locked, field, value)
+        filled.append(field)
+    if filled:
+        if locked.identity_review_required and (locked.email or locked.phone) and not duplicate_email:
+            locked.identity_review_required = False
+        locked.auto_filled_fields = sorted(set(locked.auto_filled_fields or []) | set(filled))
+        locked.save(update_fields=(*filled, "identity_review_required", "auto_filled_fields", "updated_at"))
+    if filled or duplicate_email:
+        record_event(locked, actor, EVENT.CANDIDATE_DETAILS_FROM_SCREENING, screening_id=str(screening.public_id),
+                     fields=filled, possible_duplicate_email=duplicate_email)
+    screening.candidate = locked
+
+
 def run_analysis(screening, actor=None, provider=None, client=None):
     """Analyze the stored transcript; on failure keep it so HR can retry (no repeat call needed)."""
     try:
-        result, warnings, model_version = analyze_transcript(screening, screening.transcript, provider=provider)
+        result, warnings, model_version = analyze_transcript(
+            screening, screening.transcript, provider=provider,
+            missing_contact_fields=script.missing_contact_fields(screening.candidate))
     except (LLMConfigurationError, LLMProviderError, ValueError) as exc:
         logger.warning("Screening analysis failed. screening=%s exception_type=%s", screening.public_id, type(exc).__name__)
         screening.status = ScreeningStatus.ANALYSIS_FAILED
@@ -291,6 +319,7 @@ def run_analysis(screening, actor=None, provider=None, client=None):
     screening.next_attempt_not_before = None
     with transaction.atomic():
         _apply_consent_side_effects(screening, actor, result, client)
+        _save_collected_contact_details(screening, actor, result["collected_contact_details"])
         screening.save()
         record_event(screening.candidate, actor, EVENT.SCREENING_RESULT_RECORDED, screening_id=str(screening.public_id),
                      call_status=screening.call_status, consent_status=screening.consent_status,

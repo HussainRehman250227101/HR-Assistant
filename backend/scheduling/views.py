@@ -2,7 +2,9 @@
 
 from datetime import timedelta
 
+from django.contrib.auth import get_user_model
 from django.db.models import Q
+from django.http import HttpResponse, Http404
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import exceptions, permissions, status
@@ -10,15 +12,18 @@ from rest_framework.generics import GenericAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.permissions import IsHRStaff, has_full_access
+from accounts.permissions import IsHRAdmin, IsHRStaff, has_full_access
 from candidates.views import candidates_visible_to
 from .models import ACTIVE_INTERVIEW_STATUSES, AvailabilitySlot, Interview
 from .serializers import (
-    AvailabilityCreateSerializer, AvailabilitySlotSerializer, CancelSerializer, ConfirmSlotSerializer,
-    InterviewPlanSerializer, InterviewReproposeSerializer, InterviewSerializer,
+    AvailabilityCreateSerializer, AvailabilitySlotSerializer, CancelSerializer, CompleteInterviewSerializer, ConfirmSlotSerializer,
+    InterviewPlanSerializer, InterviewReproposeSerializer, InterviewSerializer, ReassignSerializer,
 )
 from .services.auto import AutoScheduleOutcome, safe_auto_schedule
+from .services.calendar_feed import build_feed, feed_url, get_or_create_token
+from .services.feedback import complete_interview
 from .services.interviews import cancel_interview, confirm_slot, plan_interview, repropose
+from .services.reassign import reassign_interview
 from .services.slots import SchedulingError, local_window_to_utc
 
 
@@ -26,7 +31,7 @@ is_recruiter = has_full_access  # historic name: "may manage everyone's schedule
 
 
 def interviews_visible_to(user):
-    qs = Interview.objects.select_related("candidate", "requisition", "interviewer", "created_by")
+    qs = Interview.objects.select_related("candidate", "requisition", "interviewer", "created_by", "feedback")
     if is_recruiter(user):
         return qs
     return qs.filter(interviewer=user)
@@ -87,6 +92,10 @@ class InterviewListView(APIView):
             qs = qs.filter(status=status_filter)
         if request.query_params.get("mine") == "1":
             qs = qs.filter(interviewer=request.user)
+        if request.query_params.get("interviewer"):
+            qs = qs.filter(interviewer_id=request.query_params["interviewer"])
+        if request.query_params.get("upcoming") == "1":  # still to happen: no time yet, or in the future
+            qs = qs.filter(Q(confirmed_start__isnull=True) | Q(confirmed_start__gte=timezone.now()))
         return Response(InterviewSerializer(qs.order_by("confirmed_start", "-updated_at")[:200], many=True).data)
 
 
@@ -172,6 +181,44 @@ class InterviewConfirmSlotView(_InterviewAction):
         return Response(InterviewSerializer(interview).data)
 
 
+class InterviewCompleteView(GenericAPIView):
+    """The assigned interviewer marks the interview done and rates every question set on the requisition."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = CompleteInterviewSerializer
+
+    def post(self, request, public_id):
+        interview = get_object_or_404(interviews_visible_to(request.user), public_id=public_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            interview = complete_interview(interview, request.user, serializer.validated_data.get("answers", []),
+                                           serializer.validated_data.get("comment", ""))
+        except SchedulingError as exc:
+            raise _bad(exc) from exc
+        return Response(InterviewSerializer(interview).data)
+
+
+class InterviewReassignView(_InterviewAction):
+    """HR Administrator only: change the interviewer and/or the date and time; the candidate and interviewers are emailed."""
+
+    permission_classes = [IsHRAdmin]
+    serializer_class = ReassignSerializer
+
+    def post(self, request, public_id):
+        interview = self.get_interview(public_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        try:
+            interview, emails, outside = reassign_interview(
+                interview, request.user, data.get("interviewer"), data.get("date"), data.get("start_time"), data.get("timezone"))
+        except SchedulingError as exc:
+            raise _bad(exc) from exc
+        return Response({"interview": InterviewSerializer(interview).data, "emails": emails,
+                         "outside_declared_availability": outside})
+
+
 class InterviewCancelView(_InterviewAction):
     serializer_class = CancelSerializer
 
@@ -184,3 +231,31 @@ class InterviewCancelView(_InterviewAction):
         except SchedulingError as exc:
             raise _bad(exc) from exc
         return Response(InterviewSerializer(interview).data)
+
+
+class CalendarSubscriptionView(APIView):
+    """The signed-in user's private calendar-feed URL (GET creates it on first use; POST regenerates it, revoking the old one)."""
+
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response({"url": feed_url(get_or_create_token(request.user))})
+
+    def post(self, request):
+        return Response({"url": feed_url(get_or_create_token(request.user, rotate=True))})
+
+
+class CalendarFeedView(APIView):
+    """Public iCalendar feed, protected only by the secret token in the URL."""
+
+    permission_classes = [permissions.AllowAny]
+    authentication_classes = []
+
+    def get(self, request, token):
+        user = get_user_model().objects.filter(calendar_token=token, is_active=True).first()
+        if user is None:
+            raise Http404()
+        response = HttpResponse(build_feed(user), content_type="text/calendar; charset=utf-8")
+        response["Cache-Control"] = "private, no-store"
+        response["X-Content-Type-Options"] = "nosniff"
+        return response

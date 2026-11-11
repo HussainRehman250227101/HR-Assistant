@@ -53,6 +53,8 @@ class Requisition(models.Model):
     required_skills = models.JSONField(default=list, blank=True)
     preferred_skills = models.JSONField(default=list, blank=True)
     screening_questions = models.JSONField(default=list, blank=True)
+    # Questions the interviewer must rate (POOR / AVERAGE / GOOD) when marking an interview done.
+    interview_questions = models.JSONField(default=list, blank=True)
     # How interviews for this role are held (set by HR at creation). The scheduling agent emails the candidate
     # accordingly: ONSITE -> the role location; VIDEO -> a WhatsApp video call on `interview_whatsapp_number`.
     interview_format = models.CharField(max_length=10, choices=InterviewFormat.choices, default=InterviewFormat.ONSITE)

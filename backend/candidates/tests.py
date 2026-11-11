@@ -170,14 +170,17 @@ class CandidateAndResumeAPITests(APITestCase):
         self.assertEqual(response.status_code,status.HTTP_200_OK)
         self.assertNotIn("extracted_text",response.data)
 
-    def test_recruiter_interviewer_cannot_download_resume(self):
+    def test_recruiter_interviewer_can_download_only_assigned_candidate_resume(self):
         candidate=self.create_candidate()
         self.client.post(self.upload_url(candidate),{"file":make_docx()},format="multipart")
         doc=ResumeDocument.objects.get(candidate=candidate)
-        self.assign_interview(candidate,self.interviewer)
+        url=reverse("candidates:resume-document-download",args=[doc.public_id])
         self.client.force_authenticate(user=self.interviewer)
-        response=self.client.get(reverse("candidates:resume-document-download",args=[doc.public_id]))
-        self.assertEqual(response.status_code,status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.get(url).status_code,status.HTTP_404_NOT_FOUND)  # not assigned: invisible
+        self.assign_interview(candidate,self.interviewer)
+        response=self.client.get(url)
+        self.assertEqual(response.status_code,status.HTTP_200_OK)
+        response.close()
 
 
     def test_batch_upload_browsable_page_renders_file_picker_for_open_requisition(self):

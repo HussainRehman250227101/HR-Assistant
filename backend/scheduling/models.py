@@ -41,6 +41,7 @@ class InterviewStatus(models.TextChoices):
     SLOT_CONFIRMED = "SLOT_CONFIRMED", "Slot confirmed with candidate and interviewer"
     SCHEDULED = "SCHEDULED", "Invitation sent - scheduled"
     CANCELLED = "CANCELLED", "Cancelled"
+    COMPLETED = "COMPLETED", "Interview done - feedback recorded"
 
 
 ACTIVE_INTERVIEW_STATUSES = (
@@ -89,3 +90,43 @@ class Interview(models.Model):
 
     def __str__(self):
         return f"Interview {str(self.public_id)[:8]} - {self.candidate} ({self.status})"
+
+
+class FeedbackRating(models.TextChoices):
+    POOR = "POOR", "Poor"
+    AVERAGE = "AVERAGE", "Average"
+    GOOD = "GOOD", "Good"
+
+
+RATING_POINTS = {FeedbackRating.POOR: 1, FeedbackRating.AVERAGE: 2, FeedbackRating.GOOD: 3}
+
+
+class InterviewFeedback(models.Model):
+    """The interviewer's answers after the interview (append-only: one record per interview, never edited).
+
+    `answers` snapshots the question texts as they were when the interviewer submitted, so a later edit of the
+    requisition never rewrites the record. It is decision support for HR, not a hiring decision.
+    """
+
+    public_id = models.UUIDField(default=uuid.uuid4, unique=True, editable=False, db_index=True)
+    interview = models.OneToOneField(Interview, on_delete=models.PROTECT, related_name="feedback")
+    submitted_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="interview_feedback_given")
+    answers = models.JSONField(default=list, help_text="[{question, rating}] in question order.")
+    comment = models.TextField(blank=True)
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-submitted_at",)
+
+    @property
+    def average_points(self):
+        points = [RATING_POINTS[a["rating"]] for a in self.answers if a.get("rating") in RATING_POINTS]
+        return round(sum(points) / len(points), 2) if points else None
+
+    @property
+    def overall_rating(self):
+        """Mean of the ratings mapped back to Poor/Average/Good (below 1.67 Poor, up to 2.33 Average, else Good)."""
+        mean = self.average_points
+        if mean is None:
+            return ""
+        return FeedbackRating.POOR if mean < 1.67 else FeedbackRating.AVERAGE if mean <= 2.33 else FeedbackRating.GOOD

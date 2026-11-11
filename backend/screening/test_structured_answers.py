@@ -139,12 +139,12 @@ class ScriptRuleTests(TestCase):
         self.assertIn("Are you ready?", script.BROWSER_AGENT_FIRST_MESSAGE)
         self.assertIn("on behalf of HR at {{organization_name}}", script.BROWSER_AGENT_FIRST_MESSAGE)
         self.assertLess(len(script.BROWSER_AGENT_FIRST_MESSAGE), 230)
-        self.assertEqual(script.BROWSER_SCRIPT_VERSION, "screening-browser-v4")
-        self.assertEqual(script.SCRIPT_VERSION, "screening-call-v4")
+        self.assertEqual(script.BROWSER_SCRIPT_VERSION, "screening-browser-v5")
+        self.assertEqual(script.SCRIPT_VERSION, "screening-call-v5")
 
     def test_salary_budget_is_never_sent_to_the_voice_agent(self):
         self.assertEqual(set(script.DYNAMIC_VARIABLES), {
-            "candidate_name", "role_title", "organization_name", "screening_questions", "question_count", "human_contact",
+            "candidate_name", "role_title", "organization_name", "screening_questions", "question_count", "human_contact", "missing_contact_details",
         })
 
 

@@ -9,7 +9,7 @@ from llm.services import get_llm_provider
 from scoring.services.agent import _redact_contact_details
 from ..schemas import ScreeningAnalysisOutput
 
-PROMPT_VERSION = "screening-analysis-v2"
+PROMPT_VERSION = "screening-analysis-v3"
 MAX_TRANSCRIPT_CHARACTERS = 60000
 MAX_SALARY = Decimal("9999999999.99")
 
@@ -45,6 +45,10 @@ You summarise a recorded preliminary screening call for a human HR reviewer. Ret
   1.5 lakh -> 150000); one figure means minimum = maximum. Never guess a currency or a pay period.
   Do not judge whether the salary is acceptable or within any budget.
 - interview_availability.summary keeps the days, times and time zone exactly as the candidate gave them.
+- collected_contact_details: payload.missing_contact_fields lists the details that were missing from the record
+  and that the agent asked for. Fill only those, from what the candidate said (an email may be spelled out or
+  spoken as "at" and "dot": write it normally; a phone number as digits). Copy the candidate's exact words into
+  the matching *_statement. Leave every other field, and anything not clearly given, empty. Never guess.
 - candidate_questions lists only questions about the role or the hiring process. Ignore off-topic questions
   (general knowledge, technology explanations, questions about the AI system); they need no follow-up.
 """
@@ -69,7 +73,7 @@ def candidate_text(formatted):
     return " ".join(line[len("CANDIDATE: "):] for line in formatted.splitlines() if line.startswith("CANDIDATE: "))
 
 
-def analyze_transcript(screening, transcript, provider=None):
+def analyze_transcript(screening, transcript, provider=None, missing_contact_fields=()):
     """Return (result_dict, warnings, model_version). Raises LLM errors to the caller."""
     formatted = format_transcript(transcript, screening.candidate)
     if len(formatted) > MAX_TRANSCRIPT_CHARACTERS:
@@ -79,6 +83,7 @@ def analyze_transcript(screening, transcript, provider=None):
         "role_requirements": screening.requisition.required_skills,
         "approved_questions": [{"question_number": i, "question": q} for i, q in enumerate(screening.questions, start=1)],
         "standard_questions": [SALARY_TOPIC, NOTICE_TOPIC, AVAILABILITY_TOPIC],
+        "missing_contact_fields": list(missing_contact_fields),
         "transcript": formatted,
     }
     provider = provider or get_llm_provider()
@@ -86,11 +91,11 @@ def analyze_transcript(screening, transcript, provider=None):
         build_messages(SYSTEM_INSTRUCTION, json.dumps(payload, ensure_ascii=False)),
         ScreeningAnalysisOutput,
     )
-    result, warnings = verify_analysis(output, screening.questions, candidate_text(formatted))
+    result, warnings = verify_analysis(output, screening.questions, candidate_text(formatted), missing_contact_fields)
     return result, warnings, getattr(provider, "deployment_name", "")
 
 
-def verify_analysis(output, questions, candidate_words):
+def verify_analysis(output, questions, candidate_words, missing_contact_fields=()):
     evidence = _normalize(candidate_words)
     warnings = list(output.warnings)
     unresolved = list(output.unresolved_questions)
@@ -137,6 +142,7 @@ def verify_analysis(output, questions, candidate_words):
         "candidate_stated_availability": availability_summary,
         "availability_statement": availability_statement,
         **_verify_salary(output.salary_expectation, evidence, warnings, unresolved, completed),
+        "collected_contact_details": _verify_contact_details(output.collected_contact_details, missing_contact_fields, evidence, warnings),
         "notice_period": notice_summary[:300],
         "notice_period_statement": notice_statement,
         "role_requirement_responses": requirements,
@@ -215,3 +221,29 @@ def _verify_salary(item, evidence, warnings, unresolved, completed):
         "expected_salary_period": item.period,
         "expected_salary_statement": statement,
     }
+
+
+def _verify_contact_details(item, missing, evidence, warnings):
+    """Keep a spoken contact detail only if it was missing, its quote is in the transcript and its format is valid."""
+    from candidates.services.contact_details import _looks_like_name, _normalize_email, _normalize_phone, _squash
+
+    collected = {}
+    for field in missing:
+        value = _squash(getattr(item, field, ""))
+        statement = _squash(getattr(item, f"{field}_statement", ""))
+        if not value:
+            continue
+        if not statement or _normalize(statement) not in evidence:
+            warnings.append(f"Contact detail ({field}): the quoted words could not be verified in the transcript and were not saved.")
+            continue
+        if field == "email":
+            value = _normalize_email(value)
+        elif field == "phone":
+            value = _normalize_phone(value)
+        else:
+            value = value if _looks_like_name(value) else None
+        if not value:
+            warnings.append(f"Contact detail ({field}): the value was not in a valid format and was not saved.")
+            continue
+        collected[field] = value
+    return collected

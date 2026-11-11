@@ -145,7 +145,7 @@ class BrowserVoiceAPITests(ScreeningFixture, APITestCase):
         self.assertEqual(response.status_code, 201, response.data)
         self.assertEqual(response.data["channel"], "BROWSER_VOICE")
         self.assertEqual(response.data["status"], "PENDING_CALL")
-        self.assertEqual(response.data["script_version"], "screening-browser-v4")
+        self.assertEqual(response.data["script_version"], "screening-browser-v5")
         other = Candidate.objects.create(requisition=self.requisition, full_name="Sara Ahmed", phone="03001112222",
                                          current_status=CandidateStatus.APPROVED_FOR_SCREENING, created_by=self.recruiter)
         refused = self.create(candidate=other, channel="AI_VOICE", start_call_now=True)

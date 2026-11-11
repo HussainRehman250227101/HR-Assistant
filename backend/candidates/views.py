@@ -259,10 +259,10 @@ class ResumeDocumentDetailView(APIView):
 
 
 class ResumeDocumentDownloadView(APIView):
-    permission_classes=[IsHRStaff]
+    permission_classes=[permissions.IsAuthenticated]  # interviewers may download only the CVs of candidates assigned to them
 
     def get(self,request,public_id):
-        document=get_object_or_404(ResumeDocument.objects.select_related("candidate"),public_id=public_id)
+        document=get_object_or_404(documents_visible_to(request.user),public_id=public_id)
         if not document.file:
             raise exceptions.NotFound("Resume file is no longer available.")
         try:

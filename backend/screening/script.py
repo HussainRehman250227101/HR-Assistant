@@ -8,7 +8,7 @@ Per-session values are sent as ElevenLabs dynamic variables. Both scripts use th
 names, so one agent works with either set of variables.
 """
 
-SCRIPT_VERSION = "screening-call-v4"
+SCRIPT_VERSION = "screening-call-v5"
 
 # The scheduling agent (Agent 3) needs the candidate's availability to book an interview automatically, so this
 # one question is added to the HR-approved list when a screening is created (user decision 2026-11-08).
@@ -32,8 +32,24 @@ BROWSER_THREE_ATTEMPT_RULE = _THREE_ATTEMPT_TEMPLATE.replace("__END_WORD__", "se
 
 DYNAMIC_VARIABLES = (
     "candidate_name", "role_title", "organization_name", "screening_questions",
-    "question_count", "human_contact",
+    "question_count", "human_contact", "missing_contact_details",
 )
+
+# Contact details the record lacks (user decision 2026-11-10): the agent asks for exactly these and nothing else.
+CONTACT_FIELD_LABELS = {"full_name": "full name", "email": "email address", "phone": "phone number"}
+NO_MISSING_CONTACT_DETAILS = "none"
+
+CONTACT_DETAILS_RULES = """- Missing contact details: {{missing_contact_details}}
+  If this says "none", do NOT ask for a name, email address or phone number; they are already on file.
+  Otherwise, right after the readiness/consent step and before the approved questions, politely ask the
+  candidate, one at a time, for ONLY the details listed there ("full name", "email address", "phone number").
+  For an email address ask them to spell it letter by letter and say "at" and "dot", then read it back and
+  ask them to confirm. Read a phone number back digit by digit to confirm. If the candidate declines to give
+  one, accept it politely, do not insist and move on. Never ask for a detail that is not listed."""
+
+def missing_contact_fields(candidate):
+    """Keys (full_name, email, phone) that the candidate record does not have."""
+    return [field for field in CONTACT_FIELD_LABELS if not (getattr(candidate, field, "") or "").strip()]
 
 # Only the questions HR entered in the requisition's "Approved screening questions" field are asked (user
 # decision 2026-11-08). To collect salary, notice period or availability, HR adds them to that field; the
@@ -68,7 +84,7 @@ Mandatory call flow:
 3. Ask for consent: "This call is recorded and transcribed so the recruiting team can review your answers.
    Do you consent to continue?" If the candidate declines, say that a human recruiter can screen them instead
    via {{human_contact}}, thank them and end the call. Do not ask any screening question without consent.
-4. Ask the approved questions below in order, one at a time, with neutral and respectful wording.
+4. Collect missing contact details (see the "Missing contact details" rule), then ask the approved questions below in order, one at a time, with neutral and respectful wording.
    Ask ONLY these questions: do not add, remove, reword or follow up on any question, and never explain or
    define the words in a question.
    Approved questions ({{question_count}}):
@@ -79,6 +95,7 @@ Rules:
 - Ask only job-related questions. Never ask about age, religion, marital or family status, pregnancy, health,
   disability, ethnicity, nationality, political views or any other protected or sensitive matter.
 - Never evaluate, reject, promise or decline anything. You make no hiring decision.
+""" + CONTACT_DETAILS_RULES + """
 """ + STAY_ON_TOPIC_RULES + """
 """ + PHONE_THREE_ATTEMPT_RULE + """
 - If the candidate asks for a human, wants to stop, asks not to be called again, or wants to reschedule,
@@ -91,7 +108,7 @@ Rules:
 """
 
 
-BROWSER_SCRIPT_VERSION = "screening-browser-v4"
+BROWSER_SCRIPT_VERSION = "screening-browser-v5"
 
 BROWSER_AGENT_FIRST_MESSAGE = (
     "Hello {{candidate_name}}, I am an AI assistant calling on behalf of HR at {{organization_name}}. "
@@ -108,7 +125,7 @@ Mandatory session flow:
    Wait for the answer. If they are not ready, want to stop, or want a human, say that a human recruiter can
    follow up via {{human_contact}}, thank them and end the session. Do not ask any question until they say
    they are ready.
-2. Ask the approved questions below in order, one at a time, with neutral and respectful wording.
+2. Collect missing contact details (see the "Missing contact details" rule), then ask the approved questions below in order, one at a time, with neutral and respectful wording.
    Ask ONLY these questions: do not add, remove, reword or follow up on any question, and never explain or
    define the words in a question.
    Approved questions ({{question_count}}):
@@ -120,6 +137,7 @@ Rules:
 - Ask only job-related questions. Never ask about age, religion, marital or family status, pregnancy, health,
   disability, ethnicity, nationality, political views or any other protected or sensitive matter.
 - Never evaluate, reject, promise or decline anything. You make no hiring decision.
+""" + CONTACT_DETAILS_RULES + """
 """ + STAY_ON_TOPIC_RULES + """
 """ + BROWSER_THREE_ATTEMPT_RULE + """
 - If the candidate asks for a human, wants to stop, or wants to continue another time, stop questioning
@@ -139,6 +157,9 @@ def build_dynamic_variables(screening, organization_name, human_contact):
         "screening_questions": "\n".join(f"   {index}. {question}" for index, question in enumerate(questions, start=1)),
         "question_count": str(len(questions)),
         "human_contact": human_contact,
+        "missing_contact_details": ", ".join(
+            CONTACT_FIELD_LABELS[f] for f in missing_contact_fields(screening.candidate)
+        ) or NO_MISSING_CONTACT_DETAILS,
     }
 
 

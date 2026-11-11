@@ -38,6 +38,17 @@ class StatedAnswer(BaseModel):
     candidate_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
 
 
+class CollectedContactDetails(BaseModel):
+    """Contact details the candidate gave aloud because they were missing from the record. Empty if not given."""
+
+    full_name: str = Field(description="Full name as the candidate stated it; empty if not given.")
+    full_name_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
+    email: str = Field(description="Email address written normally (name@example.com) from what the candidate spoke or spelled; empty if not given.")
+    email_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
+    phone: str = Field(description="Phone number with digits only and an optional leading +; empty if not given.")
+    phone_statement: str = Field(description="Exact words copied from a CANDIDATE line; empty if none.")
+
+
 class ScreeningAnalysisOutput(BaseModel):
     call_outcome: Literal[
         "COMPLETED", "CONSENT_DECLINED", "HUMAN_REQUESTED", "STOPPED_BY_CANDIDATE",
@@ -49,6 +60,7 @@ class ScreeningAnalysisOutput(BaseModel):
     salary_expectation: SalaryExpectation
     notice_period: StatedAnswer = Field(description="Notice period or earliest start date.")
     interview_availability: StatedAnswer = Field(description="Days/times (and time zone) the candidate can interview.")
+    collected_contact_details: CollectedContactDetails
     role_requirement_responses: list[RoleRequirementResponse]
     candidate_questions: list[str]
     unresolved_questions: list[str]

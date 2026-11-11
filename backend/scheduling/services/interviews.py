@@ -12,6 +12,7 @@ from requisitions.models import RequisitionStatus
 from ..models import (
     ACTIVE_INTERVIEW_STATUSES, CALENDAR_SOURCE_INTERNAL, Interview, InterviewMode, InterviewStatus,
 )
+from .notifications import notify_interviewer_assigned
 from .slots import SchedulingError, compute_slots, get_zone, is_slot_free
 
 EVENT = CandidateEvent.EventType
@@ -74,6 +75,7 @@ def plan_interview(candidate, actor, data):
         _apply_proposal(interview, actor)
         change_candidate_status(candidate, CandidateStatus.INTERVIEW_PROPOSED, actor, "Interview slots being coordinated",
                                 interview_id=str(interview.public_id))
+        transaction.on_commit(lambda: notify_interviewer_assigned(interview))  # tell the interviewer once committed
     return interview
 
 
@@ -83,6 +85,7 @@ def repropose(interview, actor, data):
                                 InterviewStatus.SLOT_CONFIRMED, InterviewStatus.SCHEDULED}:
         raise SchedulingError("This interview can no longer be rescheduled.")
     rescheduling = interview.status == InterviewStatus.SCHEDULED
+    previous_interviewer_id = interview.interviewer_id
     for field in ("interviewer", "duration_minutes", "timezone", "mode", "meeting_link", "location", "contact_whatsapp",
                   "candidate_availability_note", "candidate_windows"):
         if field in data:
@@ -95,7 +98,10 @@ def repropose(interview, actor, data):
             interview.sequence += 1
             change_candidate_status(interview.candidate, CandidateStatus.INTERVIEW_PROPOSED, actor,
                                     "Interview being rescheduled", interview_id=str(interview.public_id))
-        return _apply_proposal(interview, actor)
+        result = _apply_proposal(interview, actor)
+        if interview.interviewer_id != previous_interviewer_id:
+            transaction.on_commit(lambda: notify_interviewer_assigned(interview))
+        return result
 
 
 def confirm_slot(interview, actor, slot_start, candidate_confirmed, interviewer_confirmed):
@@ -129,6 +135,8 @@ def confirm_slot(interview, actor, slot_start, candidate_confirmed, interviewer_
 def cancel_interview(interview, actor, reason):
     if interview.status == InterviewStatus.CANCELLED:
         raise SchedulingError("This interview is already cancelled.")
+    if interview.status == InterviewStatus.COMPLETED:
+        raise SchedulingError("This interview is already done and cannot be cancelled.")
     if not reason.strip():
         raise SchedulingError("A cancellation reason is required.")
     from communications.models import CommunicationLog, SendStatus

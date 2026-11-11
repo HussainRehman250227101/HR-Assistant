@@ -23,6 +23,9 @@ class User(AbstractUser):
     department = models.CharField(max_length=120, blank=True)
     job_title = models.CharField(max_length=120, blank=True)
 
+    # Secret in the private calendar-feed URL (scheduling/services/calendar_feed.py); regenerate to revoke.
+    calendar_token = models.CharField(max_length=64, null=True, blank=True, unique=True, editable=False)
+
     REQUIRED_FIELDS = ["email"]
 
     def __str__(self) -> str:

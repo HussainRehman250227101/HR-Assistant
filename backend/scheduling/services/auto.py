@@ -31,7 +31,7 @@ from llm.prompts import build_messages
 from llm.services import get_llm_provider
 from requisitions.models import InterviewFormat, RequisitionStatus
 from screening.models import ScreeningDecision, ScreeningReview
-from ..models import BOOKED_STATUSES, AvailabilitySlot, Interview, InterviewMode, InterviewStatus
+from ..models import ACTIVE_INTERVIEW_STATUSES, BOOKED_STATUSES, AvailabilitySlot, Interview, InterviewMode, InterviewStatus
 from ..schemas import CandidateAvailabilityOut
 from .interviews import confirm_slot, plan_interview
 from .slots import SchedulingError, compute_slots, get_zone, local_window_to_utc
@@ -214,6 +214,21 @@ def safe_auto_schedule(candidate_id):
                   exception_type=type(exc).__name__)
         logger.error("Automatic scheduling failed. exception_type=%s", type(exc).__name__)
         return AutoScheduleOutcome.NEEDS_HR
+
+
+def needs_hr_scheduling(candidate):
+    """True when an approved candidate has no interview and the scheduling agent will not (or could not) book one.
+
+    That is the case when the agent recorded a failure, or when automatic scheduling is switched off, so HR must plan
+    the interview. Cheap for every other status (no queries).
+    """
+    if candidate.current_status != CandidateStatus.APPROVED_FOR_INTERVIEW:
+        return False
+    if Interview.objects.filter(candidate=candidate, status__in=ACTIVE_INTERVIEW_STATUSES).exists():
+        return False
+    if not settings.INTERVIEW_AUTO_SCHEDULING_ENABLED:
+        return True
+    return CandidateEvent.objects.filter(candidate=candidate, event_type=EVENT.INTERVIEW_AUTO_SCHEDULE_FAILED).exists()
 
 
 def candidates_awaiting_auto_schedule():

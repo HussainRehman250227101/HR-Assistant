@@ -17,6 +17,7 @@ PROVIDER_SETTINGS = {
     "ELEVENLABS_WEBHOOK_SECRET": "",
     "TWILIO_ACCOUNT_SID": "",
     "TWILIO_AUTH_TOKEN": "",
+    "SCREENING_INVITE_EMAIL_ENABLED": False,  # tests that cover the invitation enable it explicitly
 }
 
 

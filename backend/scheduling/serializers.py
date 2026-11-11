@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from .models import CALENDAR_SOURCE_LABEL, AvailabilitySlot, Interview, InterviewMode
+from .models import CALENDAR_SOURCE_LABEL, AvailabilitySlot, FeedbackRating, Interview, InterviewFeedback, InterviewMode
 from .services.slots import SchedulingError, local_window_to_utc
 
 
@@ -49,6 +49,31 @@ class AvailabilityCreateSerializer(LocalWindowSerializer):
     timezone = serializers.CharField(max_length=64)
 
 
+class InterviewFeedbackSerializer(serializers.ModelSerializer):
+    submitted_by_name = serializers.SerializerMethodField()
+    overall_rating = serializers.CharField(read_only=True)
+    average_points = serializers.FloatField(read_only=True)
+
+    class Meta:
+        model = InterviewFeedback
+        fields = ("public_id", "answers", "comment", "overall_rating", "average_points", "submitted_by_name", "submitted_at")
+        read_only_fields = fields
+
+    @staticmethod
+    def get_submitted_by_name(obj):
+        return _name(obj.submitted_by)
+
+
+class FeedbackAnswerSerializer(serializers.Serializer):
+    index = serializers.IntegerField(min_value=0)
+    rating = serializers.ChoiceField(choices=FeedbackRating.choices)
+
+
+class CompleteInterviewSerializer(serializers.Serializer):
+    answers = FeedbackAnswerSerializer(many=True, required=False)
+    comment = serializers.CharField(required=False, allow_blank=True, max_length=2000)
+
+
 class InterviewSerializer(serializers.ModelSerializer):
     candidate_reference = serializers.UUIDField(source="candidate.public_id", read_only=True)
     candidate_name = serializers.CharField(source="candidate.full_name", read_only=True)
@@ -57,6 +82,9 @@ class InterviewSerializer(serializers.ModelSerializer):
     interviewer_email = serializers.EmailField(source="interviewer.email", read_only=True)
     calendar_source_label = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    feedback_questions = serializers.JSONField(source="requisition.interview_questions", read_only=True)
+    feedback = serializers.SerializerMethodField()
+    early_completion_allowed = serializers.SerializerMethodField()
 
     class Meta:
         model = Interview
@@ -66,8 +94,19 @@ class InterviewSerializer(serializers.ModelSerializer):
             "contact_whatsapp", "auto_scheduled", "candidate_availability_note", "candidate_windows", "proposed_slots", "calendar_source",
             "calendar_source_label", "confirmed_start", "confirmed_end", "candidate_confirmed_at",
             "interviewer_confirmed_at", "cancellation_reason", "sequence", "created_by_name", "created_at", "updated_at",
+            "feedback_questions", "feedback", "early_completion_allowed",
         )
         read_only_fields = fields
+
+    @staticmethod
+    def get_early_completion_allowed(obj):
+        from django.conf import settings
+        return bool(settings.INTERVIEW_TESTING_MODE)
+
+    @staticmethod
+    def get_feedback(obj):
+        feedback = getattr(obj, "feedback", None)
+        return InterviewFeedbackSerializer(feedback).data if feedback else None
 
     @staticmethod
     def get_interviewer_name(obj):
@@ -109,6 +148,15 @@ class InterviewReproposeSerializer(InterviewPlanSerializer):
             tz_name = attrs.get("timezone") or self.context["interview"].timezone
             attrs["candidate_windows"] = windows_to_utc(attrs["candidate_windows"], tz_name)
         return attrs
+
+
+class ReassignSerializer(serializers.Serializer):
+    """Administrator moves an interview. Give a new interviewer, a new date and time, or both."""
+
+    interviewer = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.filter(is_active=True), required=False)
+    date = serializers.DateField(required=False)
+    start_time = serializers.TimeField(required=False)
+    timezone = serializers.CharField(max_length=64, required=False)
 
 
 class ConfirmSlotSerializer(serializers.Serializer):

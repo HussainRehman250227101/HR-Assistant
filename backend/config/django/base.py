@@ -104,6 +104,7 @@ EMAIL_FILE_PATH = env("EMAIL_FILE_PATH", default=str(BASE_DIR / "sent-emails")) 
 EMAIL_HOST = env("EMAIL_HOST", default="") # type:ignore
 EMAIL_PORT = env.int("EMAIL_PORT", default=587)
 EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)  # port 465; mutually exclusive with EMAIL_USE_TLS
 EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="") # type:ignore
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="") # type:ignore
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@example.invalid") # type:ignore
@@ -120,7 +121,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ],
-    "DEFAULT_THROTTLE_RATES": {"anon": "30/min", "user": "120/min"},
+    "DEFAULT_THROTTLE_RATES": {"anon": "30/min", "user": "120/min", "password_reset": env("PASSWORD_RESET_THROTTLE", default="10/hour")},
 }
 
 SIMPLE_JWT = {
@@ -222,6 +223,9 @@ SCREENING_RETRY_INTERVAL_MINUTES = env.int("SCREENING_RETRY_INTERVAL_MINUTES", d
 SCREENING_CALL_TIMEZONE = env("SCREENING_CALL_TIMEZONE", default="Asia/Karachi") # type:ignore
 SCREENING_CALL_WINDOW_START_HOUR = env.int("SCREENING_CALL_WINDOW_START_HOUR", default=9)
 SCREENING_CALL_WINDOW_END_HOUR = env.int("SCREENING_CALL_WINDOW_END_HOUR", default=19)
+# Demo: email the candidate a link to the browser voice screening as soon as HR approves them (browser mode only).
+SCREENING_INVITE_EMAIL_ENABLED = env.bool("SCREENING_INVITE_EMAIL_ENABLED", default=True)
+SCREENING_INVITE_MAX_AGE_DAYS = env.int("SCREENING_INVITE_MAX_AGE_DAYS", default=7)
 SCREENING_ORGANIZATION_NAME = env("SCREENING_ORGANIZATION_NAME", default="our company") # type:ignore
 SCREENING_HUMAN_CONTACT = env("SCREENING_HUMAN_CONTACT", default="the recruiting team by email") # type:ignore
 
@@ -239,6 +243,19 @@ SCHEDULING_DEFAULT_DURATION_MINUTES = env.int("SCHEDULING_DEFAULT_DURATION_MINUT
 # candidate's resume and personal data are erased automatically (the name is kept so HR can tell who was declined).
 REJECTION_AUTO_ENABLED = env.bool("REJECTION_AUTO_ENABLED", default=True)
 REJECTION_MAX_EMAIL_ATTEMPTS = env.int("REJECTION_MAX_EMAIL_ATTEMPTS", default=5)
+
+# Public address of this API, used in the calendar-subscription URL (Google/Outlook fetch it from the internet).
+PUBLIC_BACKEND_URL = env("PUBLIC_BACKEND_URL", default="http://127.0.0.1:8000")  # type:ignore
+
+# TESTING ONLY: lets the interviewer, HR or an administrator mark an interview done before it starts, to try the feedback flow.
+# Keep false in production.
+INTERVIEW_TESTING_MODE = env.bool("INTERVIEW_TESTING_MODE", default=False)
+
+# Password reset links are valid for one hour.
+PASSWORD_RESET_TIMEOUT = env.int("PASSWORD_RESET_TIMEOUT_SECONDS", default=3600)
+
+# Link to the HR web app used in internal emails (e.g. the interviewer assignment notice).
+FRONTEND_BASE_URL = env("FRONTEND_BASE_URL", default="http://localhost:5173")  # type:ignore
 
 # Module 13: interview invitation emails (sent through EMAIL_BACKEND after explicit HR approval).
 INVITATION_RESCHEDULE_CONTACT = env("INVITATION_RESCHEDULE_CONTACT", default=DEFAULT_FROM_EMAIL) # type:ignore

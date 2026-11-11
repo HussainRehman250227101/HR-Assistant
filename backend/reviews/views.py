@@ -12,6 +12,7 @@ from candidates.services.decline import mark_declined
 from candidates.tasks import queue_declined_processing
 from scoring.models import ResumeEvaluation
 from scoring.serializers import EvaluationListSerializer
+from screening.services.invite import invite_after_approval
 from workflows.models import WorkflowRun, WorkflowRunStatus
 from workflows.services import resume_workflow_after_review
 from .models import ShortlistDecision, ShortlistReview
@@ -147,6 +148,9 @@ class CandidateShortlistDecisionView(GenericAPIView):
             except Exception:
                 # The decision is durable; POST /api/v1/workflows/<run_uuid>/resume/ retries safely.
                 run.refresh_from_db()
+
+        if resulting_status == CandidateStatus.APPROVED_FOR_SCREENING:
+            invite_after_approval(candidate, request.user)  # emails the candidate the screening link (never raises)
 
         if resulting_status == CandidateStatus.CLOSED:
             # After the workflow resume above, so the deletion never races the scoring workflow.

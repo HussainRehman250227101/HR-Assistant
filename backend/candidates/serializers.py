@@ -19,6 +19,7 @@ class CandidateSerializer(serializers.ModelSerializer):
     created_by = serializers.IntegerField(source="created_by_id", read_only=True)
     created_by_name = serializers.SerializerMethodField()
     display_name = serializers.SerializerMethodField()
+    needs_hr_scheduling = serializers.SerializerMethodField()
     resume_documents = ResumeDocumentSummarySerializer(many=True, read_only=True)
 
     class Meta:
@@ -28,9 +29,9 @@ class CandidateSerializer(serializers.ModelSerializer):
             "location", "linkedin_url", "source", "contact_consent_status",
             "recording_consent_status", "consent_preferences", "current_status",
             "identity_review_required", "auto_filled_fields", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name",
-            "resume_documents", "created_at", "updated_at",
+            "needs_hr_scheduling", "resume_documents", "created_at", "updated_at",
         )
-        read_only_fields = ("public_id", "display_name", "current_status", "identity_review_required", "auto_filled_fields", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
+        read_only_fields = ("public_id", "display_name", "needs_hr_scheduling", "current_status", "identity_review_required", "auto_filled_fields", "closed_reason", "personal_data_erased_at", "created_by", "created_by_name", "resume_documents", "created_at", "updated_at")
 
     def update(self, instance, validated_data):
         # A field a recruiter edits is no longer "from the resume".
@@ -42,6 +43,12 @@ class CandidateSerializer(serializers.ModelSerializer):
     @staticmethod
     def get_created_by_name(obj):
         return obj.created_by.get_full_name() or obj.created_by.username
+
+    @staticmethod
+    def get_needs_hr_scheduling(obj):
+        from scheduling.services.auto import needs_hr_scheduling  # lazy: scheduling imports candidates
+
+        return needs_hr_scheduling(obj)
 
     @staticmethod
     def get_display_name(obj):

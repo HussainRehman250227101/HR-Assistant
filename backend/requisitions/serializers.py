@@ -30,6 +30,10 @@ class RequisitionSerializer(serializers.ModelSerializer):
         child=serializers.CharField(max_length=500, trim_whitespace=True),
         required=False, allow_empty=True, max_length=30,
     )
+    interview_questions = serializers.ListField(
+        child=serializers.CharField(max_length=300, trim_whitespace=True),
+        required=False, allow_empty=True, max_length=20,
+    )
     minimum_experience_years = serializers.DecimalField(
         max_digits=4, decimal_places=1, min_value=0,
         required=False, default=Decimal("0.0"),
@@ -47,7 +51,7 @@ class RequisitionSerializer(serializers.ModelSerializer):
         fields = (
             "id", "reference_code", "title", "department", "location",
             "employment_type", "work_mode", "description", "responsibilities",
-            "required_skills", "preferred_skills", "screening_questions",
+            "required_skills", "preferred_skills", "screening_questions", "interview_questions",
             "interview_format", "interview_whatsapp_number", "minimum_experience_years", "education_requirements", "salary_min",
             "salary_max", "currency", "headcount", "status", "created_by",
             "created_by_name", "hiring_manager", "hiring_manager_name",
@@ -90,6 +94,9 @@ class RequisitionSerializer(serializers.ModelSerializer):
 
     def validate_screening_questions(self, value):
         return self._validate_unique_text_list(value, "Screening questions")
+
+    def validate_interview_questions(self, value):
+        return self._validate_unique_text_list(value, "Interview questions")
 
     def validate_interview_whatsapp_number(self, value):
         value = (value or "").strip()

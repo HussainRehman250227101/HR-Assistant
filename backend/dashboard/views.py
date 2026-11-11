@@ -18,7 +18,7 @@ from candidates.views import candidates_visible_to
 from communications.models import ApprovalStatus, CommunicationLog, SendStatus
 from accounts.permissions import has_full_access
 from requisitions.models import Requisition, RequisitionStatus
-from scheduling.models import Interview, InterviewStatus
+from scheduling.models import ACTIVE_INTERVIEW_STATUSES, Interview, InterviewStatus
 from scoring.models import ResumeEvaluation
 from screening.models import Screening, ScreeningStatus
 from workflows.models import WorkflowRun, WorkflowRunStatus
@@ -44,6 +44,11 @@ class DashboardSummaryView(APIView):
         interviews = Interview.objects.filter(candidate__in=candidates)
         messages = CommunicationLog.objects.filter(candidate__in=candidates)
         resumes = ResumeDocument.objects.filter(candidate__in=candidates)
+        # Approved for interview where the scheduling agent recorded a failure and nothing is booked: HR must act.
+        approved = candidates.filter(current_status=CandidateStatus.APPROVED_FOR_INTERVIEW)
+        stuck = approved.filter(
+            events__event_type=CandidateEvent.EventType.INTERVIEW_AUTO_SCHEDULE_FAILED,
+        ).exclude(interviews__status__in=ACTIVE_INTERVIEW_STATUSES).distinct()
         attention = [
             ("SHORTLIST_REVIEW", "Candidates awaiting shortlist decision", "/shortlist", "warning",
              candidates.filter(current_status=CandidateStatus.SCORED_HR_REVIEW).count()),
@@ -65,8 +70,10 @@ class DashboardSummaryView(APIView):
              screenings.filter(status=ScreeningStatus.AWAITING_HR_REVIEW).count()),
             ("HUMAN_SCREENING", "Human-led screenings to record", "/screening", "info",
              screenings.filter(status=ScreeningStatus.AWAITING_MANUAL_RESULT).count()),
+            ("AUTO_SCHEDULE_FAILED", "HR action needed: automatic scheduling could not book an interview (no matching interviewer time or missing details)",
+             "/candidates?status=APPROVED_FOR_INTERVIEW", "warning", stuck.count()),
             ("INTERVIEW_TO_PLAN", "Approved for interview, not yet planned", "/candidates?status=APPROVED_FOR_INTERVIEW", "info",
-             candidates.filter(current_status=CandidateStatus.APPROVED_FOR_INTERVIEW).count()),
+             approved.exclude(pk__in=stuck.values("pk")).count()),
             ("NO_SHARED_AVAILABILITY", "Interviews needing manual coordination", "/interviews", "warning",
              interviews.filter(status=InterviewStatus.NEEDS_HR_COORDINATION).count()),
             ("SLOT_TO_CONFIRM", "Proposed interview slots to confirm", "/interviews", "info",

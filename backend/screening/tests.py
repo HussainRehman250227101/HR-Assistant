@@ -12,7 +12,7 @@ from accounts.models import User, UserRole
 from candidates.models import Candidate, CandidateEvent, CandidateStatus, ConsentStatus
 from requisitions.models import Requisition, RequisitionStatus
 from .models import CallAttemptStatus, CallOutcome, ScreeningStatus
-from .schemas import QuestionAnswer, RoleRequirementResponse, SalaryExpectation, ScreeningAnalysisOutput, StatedAnswer
+from .schemas import CollectedContactDetails, QuestionAnswer, RoleRequirementResponse, SalaryExpectation, ScreeningAnalysisOutput, StatedAnswer
 from .services import calls
 from .services.phone import DestinationNotAllowed, mask_phone, validate_destination
 from .services.voice import VoiceProviderError, verify_elevenlabs_signature
@@ -72,6 +72,8 @@ def analysis_output(**overrides):
                                              period="UNSPECIFIED", candidate_statement=""),
         notice_period=StatedAnswer(status="STATED", summary="One month", candidate_statement="In one month."),
         interview_availability=StatedAnswer(status="NOT_ASKED", summary="", candidate_statement=""),
+        collected_contact_details=CollectedContactDetails(full_name="", full_name_statement="", email="", email_statement="",
+                                                          phone="", phone_statement=""),
         role_requirement_responses=[RoleRequirementResponse(requirement="Python", candidate_statement="", status="UNCLEAR")],
         candidate_questions=["Is the role remote?"], unresolved_questions=[],
         concise_summary="Candidate answered both questions.",
