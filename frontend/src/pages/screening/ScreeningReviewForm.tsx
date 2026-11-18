@@ -31,7 +31,7 @@ export function ScreeningReviewForm({ screening }: { screening: Screening }) {
   }
 
   return (
-    <div className="space-y-3 rounded-md bg-slate-50 p-4 ring-1 ring-slate-200">
+    <div className="space-y-3 border-t border-slate-100 pt-4">
       <h4 className="text-sm font-semibold text-slate-900">Screening decision (human gate 2)</h4>
       <ErrorAlert error={action.error} />
       {screening.call_status !== 'COMPLETED' && (

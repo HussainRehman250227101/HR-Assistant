@@ -55,7 +55,7 @@ export function ManualResultForm({ screening }: { screening: Screening }) {
         </Field>
       </div>
       {screening.questions.map((q, i) => (
-        <div key={i} className="space-y-2 rounded-md p-3 ring-1 ring-slate-200">
+        <div key={i} className="space-y-2 border-t border-slate-100 pt-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="text-sm font-medium">{i + 1}. {q}</span>
             <Select value={answers[i].answer_status} onChange={(e) => setAnswer(i, 'answer_status', e.target.value)} options={ANSWER_OPTIONS} className="max-w-[12rem]" />

@@ -20,7 +20,7 @@ const TILE_ICONS = {
 
 function StatTile({ label, value, hint, icon, tone }: { label: string; value: number; hint?: string; icon: keyof typeof TILE_ICONS; tone: keyof typeof TILE_TONES }) {
   return (
-    <div className="flex items-start justify-between gap-3 rounded-xl bg-white p-5 shadow-sm ring-1 ring-slate-200 transition-shadow hover:shadow-md">
+    <div className="flex items-start justify-between gap-3 rounded-lg bg-white p-4 ring-1 ring-slate-200">
       <div>
         <div className="text-xs font-medium tracking-wide text-slate-500 uppercase">{label}</div>
         <div className="mt-2 text-3xl font-semibold text-slate-900 tabular-nums">{value}</div>
@@ -119,14 +119,14 @@ export function DashboardPage() {
       />
       <ErrorAlert error={summary.error} />
       {summary.isLoading || !s ? <Loading /> : (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <StatTile label="Active candidates" value={s.active_candidates} hint={`${s.total_candidates} total incl. closed`} icon="people" tone="indigo" />
             <StatTile label="Open requisitions" value={s.open_requisitions} icon="briefcase" tone="emerald" />
             <StatTile label="Items needing action" value={actionCount} icon="bell" tone="amber" />
             <StatTile label="Interviews (next 14 days)" value={s.upcoming_interviews.length} icon="calendar" tone="sky" />
           </div>
-          <div className="grid gap-6 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <Card title="Candidates by lifecycle status">
               <StatusFunnel rows={s.by_status} />
             </Card>

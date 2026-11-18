@@ -16,9 +16,9 @@ export function EvaluationView({ evaluation }: { evaluation: Evaluation }) {
       </div>
       {evaluation.overall_score === null && <Alert tone="warning">No assessable evidence — the AI did not produce an overall score. Approval requires a reasoned human score.</Alert>}
       <p className="text-sm whitespace-pre-line text-slate-700">{evaluation.overall_assessment}</p>
-      <div className="grid gap-3 lg:grid-cols-2">
+      <div className="grid gap-x-6 lg:grid-cols-2">
         {Object.entries(evaluation.criterion_scores).map(([key, c]) => (
-          <div key={key} className="rounded-md p-3 ring-1 ring-slate-200">
+          <div key={key} className="border-t border-slate-100 py-3">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium">{c.label} <span className="text-xs text-slate-400">(weight {c.weight})</span></span>
               <span className="flex items-center gap-2"><Badge value={c.evidence_status} /><span className="font-semibold">{c.score ?? '—'}</span></span>
@@ -92,7 +92,7 @@ export function ShortlistDecisionForm({ candidate, evaluation, onDone }: { candi
         </button>
       </div>
       {showOther && (
-        <form onSubmit={submit} className="space-y-3 rounded-md bg-slate-50 p-3 ring-1 ring-slate-200">
+        <form onSubmit={submit} className="space-y-3 border-t border-slate-100 pt-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Decision">
               <Select value={decision} onChange={(e) => setDecision(e.target.value)} options={[
@@ -134,7 +134,7 @@ export function ScoringPanel({ candidate, canEdit }: { candidate: Candidate; can
   const minutes = Math.max(1, Math.round((auto.data?.interval_seconds ?? 120) / 60))
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card title="AI resume evaluation (Agent 1)" actions={canEdit && scorable && (
         <Button size="sm" disabled={!hasResume} loading={start.isPending} onClick={() => start.mutate(candidate.public_id)}
           title={hasResume ? '' : 'Extract a resume first'}>{latest ? 'Re-score resume' : 'Score resume'}</Button>
@@ -159,9 +159,9 @@ export function ScoringPanel({ candidate, canEdit }: { candidate: Candidate; can
       )}
       <Card title="Shortlist decision history">
         {!history.data?.length ? <Empty>No decisions yet.</Empty> : (
-          <ul className="space-y-3 text-sm">
+          <ul className="divide-y divide-slate-100 text-sm">
             {history.data.map((h) => (
-              <li key={h.public_id} className="rounded-md p-3 ring-1 ring-slate-200">
+              <li key={h.public_id} className="py-3 first:pt-0 last:pb-0">
                 <div className="flex flex-wrap items-center gap-2"><Badge value={h.decision === 'DECLINE' ? 'DECLINED' : h.decision === 'APPROVE_FOR_SCREENING' ? 'APPROVED' : 'ON_HOLD'} label={humanize(h.decision)} /> by {h.decided_by_name} · {formatDate(h.created_at)}</div>
                 <p className="mt-1 text-slate-700">{h.decision_reason || <em className="text-slate-400">No reason given</em>}</p>
                 {h.score_override !== null && <p className="text-xs text-slate-500">Score override {h.score_override}: {h.score_override_reason}</p>}

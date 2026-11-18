@@ -98,7 +98,7 @@ export function ActiveScreening({ screening, canEdit }: { screening: Screening; 
         {screening.status === 'AWAITING_HR_REVIEW' && (
           <div className="grid gap-6 lg:grid-cols-2">
             <ScreeningResult screening={screening} />
-            <div className="space-y-6">
+            <div className="space-y-4">
               <ScreeningJobPanel screening={screening} />
               {canEdit && <ScreeningReviewForm screening={screening} />}
             </div>
@@ -188,7 +188,7 @@ export function ScreeningPanel({ candidate, canEdit }: { candidate: Candidate; c
 
   if (screenings.isLoading) return <Loading />
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ErrorAlert error={screenings.error} />
       {active ? <ActiveScreening screening={active} canEdit={canEdit} /> : canEdit && candidate.current_status === 'APPROVED_FOR_SCREENING' ? <StartScreening candidate={candidate} /> : null}
       {!active && candidate.current_status !== 'APPROVED_FOR_SCREENING' && !past.length && <Card><Empty>Screening becomes available once a recruiter approves the candidate for screening.</Empty></Card>}

@@ -2,9 +2,13 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useAddAvailability, useAvailability, useDeleteAvailability, useInterviews } from '../../api/hooks'
 import { useAuth } from '../../auth/AuthContext'
+import { CalendarSyncCard } from '../../components/CalendarSyncCard'
+import { ChangePasswordCard } from '../../components/ChangePasswordCard'
 import { Alert, Badge, Button, Card, DateInput, Empty, ErrorAlert, Field, Input, KeyValue, Loading, PageHeader, Select, Table, Td } from '../../components/ui'
 import { BROWSER_TZ, COMMON_TIMEZONES, formatDate, formatInZone, humanize } from '../../lib/format'
 import type { AvailabilitySlot, Interview } from '../../lib/types'
+import { FeedbackView } from './FeedbackView'
+import { MarkDoneModal } from './MarkDoneModal'
 
 const todayIso = () => new Date().toISOString().slice(0, 10)
 
@@ -36,6 +40,7 @@ const STATUS_NOTE: Record<Interview['status'], string> = {
   SLOT_CONFIRMED: 'The time is confirmed; the invitation email has not been sent yet.',
   SCHEDULED: 'The invitation was sent to the candidate. This interview is scheduled.',
   CANCELLED: 'This interview was cancelled.',
+  COMPLETED: 'You marked this interview done and recorded your feedback.',
 }
 
 function MyAvailability({ userId }: { userId: number }) {
@@ -93,8 +98,12 @@ function MyAvailability({ userId }: { userId: number }) {
 
 function InterviewCard({ interview: i }: { interview: Interview }) {
   const when = i.confirmed_start ? formatInZone(i.confirmed_start, BROWSER_TZ) : ''
+  const [now] = useState(() => Date.now())
+  const [doneOpen, setDoneOpen] = useState(false)
+  const started = Boolean(i.confirmed_start) && new Date(i.confirmed_start as string).getTime() <= now
+  const canMarkDone = (i.status === 'SCHEDULED' || i.status === 'SLOT_CONFIRMED') && (started || i.early_completion_allowed)
   return (
-    <div className="rounded-md p-4 ring-1 ring-slate-200">
+    <div className="py-4 first:pt-0 last:pb-0">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
           <div className="text-sm font-semibold text-slate-900">
@@ -103,7 +112,10 @@ function InterviewCard({ interview: i }: { interview: Interview }) {
           </div>
           <div className="text-xs text-slate-500">{STATUS_NOTE[i.status]}</div>
         </div>
-        <Badge value={i.status} label={humanize(i.status)} />
+        <div className="flex items-center gap-2">
+          <Badge value={i.status} label={humanize(i.status)} />
+          {canMarkDone && <Button size="sm" onClick={() => setDoneOpen(true)}>Mark interview done</Button>}
+        </div>
       </div>
       <KeyValue items={[
         ['When (your time)', when || (i.proposed_slots.length ? `${i.proposed_slots.length} slots proposed` : '')],
@@ -118,6 +130,8 @@ function InterviewCard({ interview: i }: { interview: Interview }) {
       {i.status === 'PROPOSED' && i.proposed_slots.length > 0 && (
         <p className="mt-3 text-xs text-slate-500">Proposed: {i.proposed_slots.map((s) => formatInZone(s.start, BROWSER_TZ, false)).join(' · ')}</p>
       )}
+      {i.feedback && <FeedbackView feedback={i.feedback} />}
+      {canMarkDone && <MarkDoneModal key={i.public_id} interview={i} open={doneOpen} onClose={() => setDoneOpen(false)} />}
     </div>
   )
 }
@@ -131,10 +145,10 @@ function MyInterviews() {
       actions={
         <Select value={status} onChange={(e) => setStatus(e.target.value)} options={[
           { value: 'ACTIVE', label: 'Active' }, { value: 'SCHEDULED', label: 'Scheduled' },
-          { value: 'CANCELLED', label: 'Cancelled' }, { value: '', label: 'All' }]} />
+          { value: 'COMPLETED', label: 'Done' }, { value: 'CANCELLED', label: 'Cancelled' }, { value: '', label: 'All' }]} />
       }
     >
-      <div className="space-y-3">
+      <div className="divide-y divide-slate-100">
         <ErrorAlert error={interviews.error} />
         {interviews.isLoading ? <Loading /> : !interviews.data?.length ? <Empty>No interviews are assigned to you in this view.</Empty> : (
           interviews.data.map((i) => <InterviewCard key={i.public_id} interview={i} />)
@@ -151,9 +165,11 @@ export function MySchedulePage() {
   return (
     <>
       <PageHeader title="My schedule" subtitle="Add the dates and times you are free to conduct interviews, and see the interviews assigned to you." />
-      <div className="space-y-6">
+      <div className="space-y-4">
         <MyAvailability userId={user.id} />
         <MyInterviews />
+        <CalendarSyncCard />
+        <ChangePasswordCard />
       </div>
     </>
   )

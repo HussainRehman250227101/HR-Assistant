@@ -38,9 +38,7 @@ export function ResumesPanel({ candidate, canEdit }: { candidate: Candidate; can
                   {canEdit && d.processing_status === 'FAILED' && (
                     <Button size="sm" variant="secondary" onClick={() => action.mutate({ id: d.public_id, action: 'retry' })}>Retry</Button>
                   )}
-                  {canEdit && (
-                    <Button size="sm" variant="ghost" onClick={() => downloadFile(`/candidates/resume-documents/${d.public_id}/download/`, d.original_filename).catch(setDownloadError)}>Download</Button>
-                  )}
+                  <Button size="sm" variant="ghost" onClick={() => downloadFile(`/candidates/resume-documents/${d.public_id}/download/`, d.original_filename).catch(setDownloadError)}>Download</Button>
                 </Td>
               </tr>
             ))}

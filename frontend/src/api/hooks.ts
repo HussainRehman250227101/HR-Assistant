@@ -28,8 +28,65 @@ export function useApiMutation<TVars, TResult = unknown>(fn: (vars: TVars) => Pr
 const LIFECYCLE: QueryKey[] = [keys.candidates, keys.shortlist, keys.screening, keys.dashboard, keys.interviews]
 
 // ---- Users ----
-export const useUsers = (role?: string, enabled = true) =>
-  useQuery({ queryKey: ['users', role], queryFn: () => api<User[]>(`/auth/users/${qs({ role })}`), enabled, staleTime: 60_000 })
+export const useUsers = (role?: string, enabled = true, includeInactive = false) =>
+  useQuery({
+    queryKey: ['users', role, includeInactive],
+    queryFn: () => api<User[]>(`/auth/users/${qs({ role, include_inactive: includeInactive ? '1' : undefined })}`),
+    enabled, staleTime: 60_000,
+  })
+
+export interface RecruiterInput {
+  first_name: string; last_name: string; username: string; email: string; job_title: string; department: string
+  password: string; password_confirm: string
+}
+export const useCreateRecruiter = () =>
+  useApiMutation((data: RecruiterInput) => api<User>('/auth/users/', { method: 'POST', body: data }), [['users']])
+
+export const useChangePassword = () =>
+  useApiMutation((data: { current_password: string; new_password: string; new_password_confirm: string }) =>
+    api<{ detail: string }>('/auth/password/change/', { method: 'POST', body: data }))
+
+export interface RecruiterPatch {
+  first_name?: string; last_name?: string; email?: string; department?: string; job_title?: string; is_active?: boolean
+}
+export const useUpdateRecruiter = () =>
+  useApiMutation(({ id, data }: { id: number; data: RecruiterPatch }) => api<User>(`/auth/users/${id}/`, { method: 'PATCH', body: data }), [['users'], keys.interviews])
+
+export const useDeleteRecruiter = () =>
+  useApiMutation((id: number) => api(`/auth/users/${id}/`, { method: 'DELETE' }), [['users'], keys.interviews])
+
+export const useCompleteInterview = () =>
+  useApiMutation(
+    ({ id, answers, comment }: { id: string; answers: { index: number; rating: string }[]; comment: string }) =>
+      api<Interview>(`/scheduling/interviews/${id}/complete/`, { method: 'POST', body: { answers, comment } }),
+    [keys.interviews, keys.candidates, keys.dashboard],
+  )
+
+export const useCalendarSubscription = () =>
+  useQuery({ queryKey: ['calendar-subscription'], queryFn: () => api<{ url: string }>('/scheduling/calendar/subscription/') })
+
+export const useRegenerateCalendarUrl = () =>
+  useApiMutation(() => api<{ url: string }>('/scheduling/calendar/subscription/', { method: 'POST' }), [['calendar-subscription']])
+
+export const useForgotPassword = () =>
+  useApiMutation((email: string) => api<{ detail: string }>('/auth/password/forgot/', { method: 'POST', body: { email } }))
+
+export const useResetPassword = () =>
+  useApiMutation((data: { uid: string; token: string; new_password: string; new_password_confirm: string }) =>
+    api<{ detail: string }>('/auth/password/reset/', { method: 'POST', body: data }))
+
+export interface ReassignInput { interviewer?: number; date?: string; start_time?: string; timezone?: string }
+export interface ReassignResult {
+  interview: Interview
+  emails: Record<string, 'SENT' | 'NOT_SENT'>
+  outside_declared_availability: boolean
+}
+export const useReassignInterview = () =>
+  useApiMutation(
+    ({ id, data }: { id: string; data: ReassignInput }) =>
+      api<ReassignResult>(`/scheduling/interviews/${id}/reassign/`, { method: 'POST', body: data }),
+    [keys.interviews, keys.candidates, keys.dashboard],
+  )
 
 // ---- Requisitions ----
 export const useRequisitions = (params: Record<string, string | number | undefined>) =>
@@ -152,16 +209,25 @@ export const useScreeningAction = () =>
 export const useScreening = (id: string | undefined) =>
   useQuery({ queryKey: [...keys.screening, 'detail', id], queryFn: () => api<Screening>(`/screening/${id}/`), enabled: Boolean(id) })
 
-export const useStartBrowserSession = () =>
+export const useStartBrowserSession = (inviteToken?: string) =>
   useApiMutation(({ id }: { id: string }) =>
-    api<BrowserSessionStart>(`/screening/${id}/browser-session/`, { body: { consent_acknowledged: true } }), LIFECYCLE)
+    api<BrowserSessionStart>(inviteToken ? `/screening/invite/${inviteToken}/start/` : `/screening/${id}/browser-session/`,
+      { body: { consent_acknowledged: true } }), LIFECYCLE)
+
+/** Candidate-facing screening link (no login): the signed token in the URL is the credential. */
+export interface ScreeningInviteInfo {
+  public_id: string; status: string; role_title: string; organization: string
+  candidate_first_name: string; attempt_count: number; max_attempts: number
+}
+export const useScreeningInvite = (token: string | undefined) =>
+  useQuery({ queryKey: [...keys.screening, 'invite', token], queryFn: () => api<ScreeningInviteInfo>(`/screening/invite/${token}/`), enabled: Boolean(token), retry: false })
 
 /** Asks the backend to fetch the authoritative result from ElevenLabs. Only a concluded session refreshes the lifecycle views. */
-export function useCompleteBrowserSession() {
+export function useCompleteBrowserSession(inviteToken?: string) {
   const client = useQueryClient()
   return useMutation({
     mutationFn: ({ id, body }: { id: string; body: BrowserSessionComplete }) =>
-      api<BrowserSessionResult>(`/screening/${id}/browser-session/complete/`, { body }),
+      api<BrowserSessionResult>(inviteToken ? `/screening/invite/${inviteToken}/complete/` : `/screening/${id}/browser-session/complete/`, { body }),
     onSuccess: async (result) => {
       if (result.session_state !== 'processing') await Promise.all(LIFECYCLE.map((key) => client.invalidateQueries({ queryKey: key })))
     },

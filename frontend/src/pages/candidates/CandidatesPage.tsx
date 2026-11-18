@@ -38,11 +38,11 @@ export function CandidatesPage() {
             {candidates.data.results.map((c) => (
               <tr key={c.public_id} className="hover:bg-slate-50">
                 <Td>
-                  <Link to={`/candidates/${c.public_id}`} className="font-medium text-indigo-700 hover:underline">{c.display_name}</Link>
+                  <Link to={`/candidates/${c.public_id}${c.needs_hr_scheduling ? '?tab=interview' : ''}`} className="font-medium text-indigo-700 hover:underline">{c.display_name}</Link>
                   {c.identity_review_required && <span className="ml-2"><Badge tone="amber" label="Contact details missing" /></span>}
                 </Td>
                 <Td>{requisitions.data?.results.find((r) => r.id === c.requisition)?.title ?? `#${c.requisition}`}</Td>
-                <Td><Badge value={c.current_status} /></Td>
+                <Td>{c.needs_hr_scheduling ? <Badge tone="amber" label="HR review required" /> : <Badge value={c.current_status} />}</Td>
                 <Td className="text-xs text-slate-600">{c.email || '—'}<br />{c.phone || ''}</Td>
                 <Td>{formatDate(c.updated_at)}</Td>
               </tr>

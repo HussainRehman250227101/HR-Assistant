@@ -28,7 +28,8 @@ function interview(patch: Partial<Interview>): Interview {
     auto_scheduled: true, location: '', candidate_availability_note: '', candidate_windows: [], proposed_slots: [],
     calendar_source: 'x', calendar_source_label: 'x', confirmed_start: '2030-11-12T05:30:00Z', confirmed_end: '2030-11-12T06:15:00Z',
     candidate_confirmed_at: null, interviewer_confirmed_at: null, cancellation_reason: '', sequence: 0, created_by_name: 'HR Admin',
-    created_at: '2030-11-01T08:00:00Z', updated_at: '2030-11-01T08:00:00Z', ...patch,
+    created_at: '2030-11-01T08:00:00Z', updated_at: '2030-11-01T08:00:00Z',
+    feedback_questions: [], feedback: null, early_completion_allowed: false, ...patch,
   }
 }
 
@@ -42,6 +43,7 @@ function renderPage() {
 beforeEach(() => {
   apiMock.mockReset()
   apiMock.mockImplementation(async (path: string) => {
+    if (path.startsWith('/scheduling/calendar/')) return { url: 'https://api.example.test/feed.ics' } as never
     if (path.startsWith('/scheduling/availability/')) return [SLOT_BOOKED, SLOT_FREE] as never
     if (path.startsWith('/scheduling/interviews/')) return [interview({})] as never
     return undefined as never

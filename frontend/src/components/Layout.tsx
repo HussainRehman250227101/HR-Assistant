@@ -21,6 +21,7 @@ const ICONS = {
   interviews: <Icon><rect x="3" y="5" width="18" height="16" rx="2" /><path d="M3 10h18M8 3v4M16 3v4" /></Icon>,
   schedule: <Icon><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></Icon>,
   audit: <Icon><path d="M12 3l8 3v6c0 4.5-3.2 8-8 9-4.8-1-8-4.5-8-9V6z" /><path d="M9 12l2 2 4-4" /></Icon>,
+  recruiters: <Icon><circle cx="10" cy="8" r="3.5" /><path d="M3 20c.6-3.4 3.3-5.5 7-5.5s6.4 2.1 7 5.5M19 8v6M16 11h6" /></Icon>,
   integrations: <Icon><path d="M9 3v5M15 3v5M7 8h10v4a5 5 0 0 1-10 0zM12 17v4" /></Icon>,
 }
 
@@ -41,6 +42,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
   {
     title: 'Administration',
     items: [
+      { to: '/recruiters', label: 'Recruiters', icon: 'recruiters', staff: true },
       { to: '/activity', label: 'Audit Log', icon: 'audit', staff: true },
       { to: '/settings', label: 'Integrations', icon: 'integrations', staff: true },
     ],
@@ -101,7 +103,7 @@ export function Layout() {
         </nav>
 
         {user && (
-          <div className="m-3 flex items-center gap-3 rounded-xl bg-white/5 p-3 ring-1 ring-white/5">
+          <div className="m-3 flex items-center gap-3 border-t border-white/10 px-2 pt-4 pb-1">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-indigo-500/30 text-xs font-semibold text-indigo-100">{initials(displayName)}</div>
             <div className="min-w-0 flex-1 leading-tight">
               <div className="truncate text-sm font-medium text-white">{displayName}</div>

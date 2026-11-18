@@ -54,7 +54,7 @@ export function CandidateDetailPage() {
   return (
     <>
       <PageHeader
-        title={<span className="flex flex-wrap items-center gap-3">{c.display_name} <Badge value={c.current_status} /></span>}
+        title={<span className="flex flex-wrap items-center gap-3">{c.display_name} {c.needs_hr_scheduling ? <Badge tone="amber" label="HR review required" /> : <Badge value={c.current_status} />}</span>}
         subtitle={requisition ? <Link className="text-indigo-700 hover:underline" to={`/requisitions/${requisition.reference_code}`}>{requisition.title}</Link> : null}
         actions={<>
           {hasFullAccess && c.current_status !== 'CLOSED' && <Button variant="secondary" onClick={() => setEditOpen(true)}>Edit details</Button>}
@@ -83,7 +83,7 @@ export function CandidateDetailPage() {
         ] as { value: Tab; label: string }[]).filter((t) => visibleTabs.includes(t.value))}
       />
       {tab === 'overview' && (
-        <div className="space-y-6">
+        <div className="space-y-4">
           <Card title="Candidate details">
             {c.auto_filled_fields?.length > 0 && <p className="mb-3 text-xs text-slate-500">Fields marked “from resume” were read automatically from the candidate's resume.</p>}
             <KeyValue items={[

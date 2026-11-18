@@ -5,7 +5,7 @@ import type { Screening } from '../../lib/types'
 
 function StandardAnswer({ label, value, quote }: { label: string; value: string; quote: string }) {
   return (
-    <div className="rounded-md p-3 text-sm ring-1 ring-slate-200">
+    <div className="border-l-2 border-slate-200 pl-3 text-sm">
       <div className="text-xs font-semibold text-slate-500 uppercase">{label}</div>
       <div className={value ? 'mt-1 font-medium text-slate-900' : 'mt-1 text-slate-400'}>{value || 'Not stated'}</div>
       {quote && <p className="mt-1 text-slate-600"><span className="text-xs font-semibold text-emerald-700 uppercase">Candidate said: </span>“{quote}”</p>}
@@ -47,9 +47,9 @@ export function ScreeningResult({ screening }: { screening: Screening }) {
       {screening.question_answer_pairs.length > 0 && (
         <div>
           <h4 className="mb-2 text-xs font-semibold text-slate-500 uppercase">Questions and answers</h4>
-          <ol className="space-y-2">
+          <ol className="divide-y divide-slate-100">
             {screening.question_answer_pairs.map((qa) => (
-              <li key={qa.question_number} className="rounded-md p-3 text-sm ring-1 ring-slate-200">
+              <li key={qa.question_number} className="py-3 text-sm first:pt-0 last:pb-0">
                 <div className="flex items-start justify-between gap-2">
                   <span className="font-medium">{qa.question_number}. {qa.question}</span>
                   <Badge value={qa.answer_status} />
@@ -89,7 +89,7 @@ export function ScreeningResult({ screening }: { screening: Screening }) {
             {showTranscript ? 'Hide' : 'Show'} {browser ? 'session' : 'call'} transcript ({screening.transcript.length} turns)
           </button>
           {showTranscript && (
-            <div className="mt-2 max-h-96 space-y-1 overflow-y-auto rounded-md bg-slate-50 p-3 text-sm">
+            <div className="mt-2 max-h-96 space-y-1 overflow-y-auto border-l-2 border-slate-200 pl-3 text-sm">
               {screening.transcript.map((t, i) => (
                 <p key={i}><span className={`font-semibold ${t.role === 'user' ? 'text-emerald-700' : 'text-indigo-700'}`}>{t.role === 'user' ? 'Candidate' : 'AI agent'}:</span> {t.message}</p>
               ))}

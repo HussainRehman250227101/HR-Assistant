@@ -11,6 +11,7 @@ export interface User {
   department: string
   job_title: string
   is_superuser: boolean
+  is_active: boolean
 }
 
 export interface Paginated<T> {
@@ -37,6 +38,7 @@ export interface Requisition {
   required_skills: string[]
   preferred_skills: string[]
   screening_questions: string[]
+  interview_questions: string[]
   interview_format: InterviewFormat
   interview_whatsapp_number: string
   minimum_experience_years: string
@@ -105,6 +107,8 @@ export interface Candidate {
   personal_data_erased_at: string | null
   created_by: number
   created_by_name: string
+  /** Approved for interview but the scheduling agent could not (or may not) book it: HR must plan the interview. */
+  needs_hr_scheduling: boolean
   resume_documents: ResumeSummary[]
   created_at: string
   updated_at: string
@@ -373,7 +377,19 @@ export interface Slot {
   end: string
 }
 
-export type InterviewStatus = 'PROPOSED' | 'NEEDS_HR_COORDINATION' | 'SLOT_CONFIRMED' | 'SCHEDULED' | 'CANCELLED'
+export type InterviewStatus = 'PROPOSED' | 'NEEDS_HR_COORDINATION' | 'SLOT_CONFIRMED' | 'SCHEDULED' | 'CANCELLED' | 'COMPLETED'
+
+export type FeedbackRating = 'POOR' | 'AVERAGE' | 'GOOD'
+
+export interface InterviewFeedback {
+  public_id: string
+  answers: { question: string; rating: FeedbackRating }[]
+  comment: string
+  overall_rating: FeedbackRating | ''
+  average_points: number | null
+  submitted_by_name: string
+  submitted_at: string
+}
 
 export interface Interview {
   public_id: string
@@ -405,6 +421,9 @@ export interface Interview {
   created_by_name: string
   created_at: string
   updated_at: string
+  feedback_questions: string[]
+  feedback: InterviewFeedback | null
+  early_completion_allowed: boolean
 }
 
 export interface LocalWindow {

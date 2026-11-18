@@ -59,14 +59,14 @@ export function Loading({ label = 'Loading…' }: { label?: string }) {
 
 export function Card({ title, actions, children, className }: { title?: ReactNode; actions?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={cx('rounded-xl bg-white shadow-sm ring-1 ring-slate-200', className)}>
+    <section className={cx('rounded-lg bg-white ring-1 ring-slate-200', className)}>
       {(title || actions) && (
-        <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-3.5">
+        <header className="flex flex-wrap items-center justify-between gap-2 px-5 pt-4">
           <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
           <div className="flex flex-wrap gap-2">{actions}</div>
         </header>
       )}
-      <div className="p-5">{children}</div>
+      <div className={cx('px-5 pb-5', title || actions ? 'pt-3' : 'pt-5')}>{children}</div>
     </section>
   )
 }
@@ -185,13 +185,13 @@ export function Modal({ open, title, onClose, children, wide }: { open: boolean;
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/40 p-4 pt-16" onMouseDown={onClose}>
       <div className={cx('w-full rounded-lg bg-white shadow-xl', wide ? 'max-w-3xl' : 'max-w-lg')} onMouseDown={(e) => e.stopPropagation()}>
-        <header className="flex items-center justify-between border-b border-slate-100 px-5 py-3">
+        <header className="flex items-center justify-between px-5 pt-4">
           <h3 className="font-semibold text-slate-900">{title}</h3>
           <button className="text-slate-400 hover:text-slate-600" onClick={onClose} aria-label="Close">
             ✕
           </button>
         </header>
-        <div className="p-5">{children}</div>
+        <div className="px-5 pt-3 pb-5">{children}</div>
       </div>
     </div>
   )
@@ -199,9 +199,9 @@ export function Modal({ open, title, onClose, children, wide }: { open: boolean;
 
 export function PageHeader({ title, subtitle, actions }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
+    <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-slate-900">{title}</h1>
         {subtitle && <div className="mt-1 text-sm text-slate-500">{subtitle}</div>}
       </div>
       <div className="flex flex-wrap gap-2">{actions}</div>

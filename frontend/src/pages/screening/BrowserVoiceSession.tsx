@@ -42,17 +42,19 @@ async function checkMicrophone() {
  * No phone call is placed. The backend issues a short-lived conversation token and later fetches the authoritative
  * transcript from ElevenLabs, so nothing typed or heard in this page is trusted as the result.
  */
-export function BrowserVoiceSession({ screening }: { screening: Screening }) {
+export type SessionScreening = Pick<Screening, 'public_id' | 'status'>
+
+export function BrowserVoiceSession({ screening, inviteToken }: { screening: SessionScreening; inviteToken?: string }) {
   return (
     <ConversationProvider>
-      <SessionConsole screening={screening} />
+      <SessionConsole screening={screening} inviteToken={inviteToken} />
     </ConversationProvider>
   )
 }
 
-function SessionConsole({ screening }: { screening: Screening }) {
-  const startSession = useStartBrowserSession()
-  const completeSession = useCompleteBrowserSession()
+function SessionConsole({ screening, inviteToken }: { screening: SessionScreening; inviteToken?: string }) {
+  const startSession = useStartBrowserSession(inviteToken)
+  const completeSession = useCompleteBrowserSession(inviteToken)
   const checkStatus = useScreeningAction()
   const [consent, setConsent] = useState(false)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -187,7 +189,7 @@ function SessionConsole({ screening }: { screening: Screening }) {
   }, [live])
 
   const busy = phase !== 'idle' && phase !== 'done'
-  const orphaned = phase === 'idle' && screening.status === 'CALL_IN_PROGRESS'
+  const orphaned = !inviteToken && phase === 'idle' && screening.status === 'CALL_IN_PROGRESS'
   const canStart = screening.status === 'PENDING_CALL' && phase === 'idle'
   const connected = conversation.status === 'connected'
   const indicator: { label: string; tone: 'gray' | 'blue' | 'green' | 'purple' | 'amber' } =
@@ -200,7 +202,7 @@ function SessionConsole({ screening }: { screening: Screening }) {
   return (
     <div className="space-y-4">
       {canStart && (
-        <div className="space-y-3 rounded-md bg-slate-50 p-4 text-sm ring-1 ring-slate-200">
+        <div className="space-y-3 text-sm">
           <h4 className="font-semibold text-slate-900">Before you start</h4>
           <ul className="list-disc space-y-1 pl-5 text-slate-700">
             <li>You will talk to an <strong>AI voice agent</strong>, not a person. No phone call is placed.</li>
@@ -240,7 +242,7 @@ function SessionConsole({ screening }: { screening: Screening }) {
         </div>
       )}
       {phase === 'done' && finalStatus === 'AWAITING_HR_REVIEW' && (
-        <Alert tone="success">Transcript received and summarised. The screening is now waiting for HR review. Nobody is approved or rejected automatically.</Alert>
+        <Alert tone="success">{inviteToken ? 'Thank you! Your interview is complete. Our HR team will review it and be in touch. You can close this page.' : 'Transcript received and summarised. The screening is now waiting for HR review. Nobody is approved or rejected automatically.'}</Alert>
       )}
       {phase === 'done' && finalStatus === 'ANALYSIS_FAILED' && (
         <Alert tone="warning">The transcript was saved, but the AI summary failed. A recruiter can retry the analysis from the candidate's Screening tab.</Alert>

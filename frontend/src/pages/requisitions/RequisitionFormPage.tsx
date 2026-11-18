@@ -8,7 +8,7 @@ type FormState = Record<string, string>
 
 const EMPTY: FormState = {
   title: '', department: '', location: '', employment_type: 'FULL_TIME', work_mode: 'ONSITE', description: '',
-  responsibilities: '', required_skills: '', preferred_skills: '', screening_questions: '', minimum_experience_years: '0',
+  responsibilities: '', required_skills: '', preferred_skills: '', screening_questions: '', interview_questions: '', minimum_experience_years: '0',
   education_requirements: '', salary_min: '', salary_max: '', currency: 'PKR', headcount: '1', hiring_manager: '', target_close_date: '',
   interview_format: 'ONSITE', interview_whatsapp_number: '',
 }
@@ -19,7 +19,7 @@ function toForm(r: Requisition): FormState {
   return {
     title: r.title, department: r.department, location: r.location, employment_type: r.employment_type, work_mode: r.work_mode,
     description: r.description, responsibilities: r.responsibilities, required_skills: r.required_skills.join('\n'),
-    preferred_skills: r.preferred_skills.join('\n'), screening_questions: r.screening_questions.join('\n'),
+    preferred_skills: r.preferred_skills.join('\n'), screening_questions: r.screening_questions.join('\n'), interview_questions: (r.interview_questions ?? []).join('\n'),
     minimum_experience_years: r.minimum_experience_years, education_requirements: r.education_requirements,
     salary_min: r.salary_min ?? '', salary_max: r.salary_max ?? '', currency: r.currency, headcount: String(r.headcount),
     hiring_manager: r.hiring_manager ? String(r.hiring_manager) : '', target_close_date: r.target_close_date ?? '',
@@ -50,6 +50,7 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
       work_mode: form.work_mode, description: form.description, responsibilities: form.responsibilities,
       required_skills: lines(form.required_skills), preferred_skills: lines(form.preferred_skills),
       screening_questions: lines(form.screening_questions),
+      interview_questions: lines(form.interview_questions),
       interview_format: form.interview_format as Requisition['interview_format'],
       interview_whatsapp_number: form.interview_format === 'VIDEO' ? form.interview_whatsapp_number.trim() : '',
       minimum_experience_years: form.minimum_experience_years || '0',
@@ -113,6 +114,9 @@ function RequisitionForm({ reference: ref, initial }: { reference?: string; init
               </Field>
             )}
           </div>
+          <Field className="mt-4" label="Interview feedback questions" hint="One per line. After each interview the interviewer must rate every question Poor, Average or Good (as radio buttons) before the interview can be marked done. Leave empty to ask none.">
+            <Textarea rows={5} value={form.interview_questions} onChange={set('interview_questions')} placeholder={'Technical knowledge for the role?\nCommunication skills?\nOverall fit for the team?'} />
+          </Field>
         </Card>
         <Card title="Compensation">
           <div className="grid gap-4 sm:grid-cols-3">

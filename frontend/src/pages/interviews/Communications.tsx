@@ -59,7 +59,7 @@ export function InvitationSection({ interview }: { interview: Interview }) {
   const open = logs.data?.find((l) => l.approval_status !== 'DISCARDED' && l.sequence === interview.sequence && l.kind !== 'INTERVIEW_CANCELLATION')
   if (interview.status !== 'SLOT_CONFIRMED') return null
   return (
-    <div className="space-y-3 rounded-md bg-slate-50 p-4 ring-1 ring-slate-200">
+    <div className="space-y-3 border-t border-slate-100 pt-4">
       <h4 className="text-sm font-semibold">{interview.sequence > 0 ? 'Updated invitation' : 'Interview invitation'} (human gate 3)</h4>
       <ErrorAlert error={draft.error} />
       {open ? <MessageEditor key={open.public_id + open.subject + open.body} log={open} /> : (
@@ -76,7 +76,7 @@ export function CommunicationsCard({ candidateId }: { candidateId: string }) {
     <Card title="Communication log">
       <div className="space-y-4">
         {pending?.map((l) => (
-          <div key={l.public_id} className="rounded-md bg-amber-50 p-4 ring-1 ring-amber-200">
+          <div key={l.public_id} className="border-l-2 border-amber-400 pl-3">
             <p className="mb-2 text-sm font-medium text-amber-900">A cancellation notice is waiting for your approval.</p>
             <MessageEditor key={l.public_id + l.subject + l.body} log={l} />
           </div>
@@ -95,7 +95,7 @@ export function CommunicationsCard({ candidateId }: { candidateId: string }) {
                 </div>
                 <details className="mt-1 text-xs text-slate-600">
                   <summary className="cursor-pointer text-indigo-700">Read the email (to {l.recipient})</summary>
-                  <pre className="mt-2 rounded-md bg-slate-50 p-3 font-mono whitespace-pre-wrap ring-1 ring-slate-200">{l.body}</pre>
+                  <pre className="mt-2 border-l-2 border-slate-200 pl-3 font-mono whitespace-pre-wrap">{l.body}</pre>
                 </details>
               </li>
             ))}

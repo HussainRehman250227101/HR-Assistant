@@ -123,6 +123,10 @@ export function RequisitionDetailPage() {
           {r.screening_questions.length ? (
             <ol className="list-decimal space-y-1 pl-5 text-sm">{r.screening_questions.map((q) => <li key={q}>{q}</li>)}</ol>
           ) : <Alert tone="warning">No screening questions yet. Screening calls require approved questions.</Alert>}
+          <h3 className="mt-5 mb-2 text-xs font-semibold text-slate-500 uppercase">Interview feedback questions (rated by the interviewer)</h3>
+          {r.interview_questions?.length ? (
+            <ol className="list-decimal space-y-1 pl-5 text-sm">{r.interview_questions.map((q) => <li key={q}>{q}</li>)}</ol>
+          ) : <p className="text-sm text-slate-500">None. Interviewers can mark interviews done without answering questions.</p>}
         </Card>
         {hasFullAccess && <RubricCard reference={r.reference_code} />}
         <Card

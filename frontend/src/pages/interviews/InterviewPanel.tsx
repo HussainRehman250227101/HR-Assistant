@@ -5,6 +5,8 @@ import { BROWSER_TZ, formatDate, formatInZone, humanize } from '../../lib/format
 import type { Candidate, Interview } from '../../lib/types'
 import { CommunicationsCard, InvitationSection } from './Communications'
 import { InterviewPlanForm } from './InterviewPlanForm'
+import { FeedbackView } from './FeedbackView'
+import { MarkDoneModal } from './MarkDoneModal'
 
 const ACTIVE = ['PROPOSED', 'NEEDS_HR_COORDINATION', 'SLOT_CONFIRMED', 'SCHEDULED']
 
@@ -19,7 +21,7 @@ function SlotPicker({ interview }: { interview: Interview }) {
       <div className="text-sm font-medium">Mutually available slots</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {interview.proposed_slots.map((s) => (
-          <label key={s.start} className={`flex cursor-pointer items-start gap-2 rounded-md p-2 text-sm ring-1 ${slot === s.start ? 'bg-indigo-50 ring-indigo-400' : 'ring-slate-200'}`}>
+          <label key={s.start} className={`flex cursor-pointer items-start gap-2 rounded-md p-2 text-sm ring-1 ${slot === s.start ? 'bg-indigo-50 ring-indigo-400' : 'ring-slate-200 hover:bg-slate-50'}`}>
             <input type="radio" name={`slot-${interview.public_id}`} checked={slot === s.start} onChange={() => setSlot(s.start)} className="mt-1" />
             <span>
               <span className="font-medium">{formatInZone(s.start, interview.timezone)}</span>
@@ -61,15 +63,18 @@ function ActiveInterview({ interview, canEdit, children }: { interview: Intervie
   const [replan, setReplan] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [reason, setReason] = useState('')
+  const [doneOpen, setDoneOpen] = useState(false)
+  const testingDone = interview.early_completion_allowed && ['SCHEDULED', 'SLOT_CONFIRMED'].includes(interview.status)
   const canReplan = ['PROPOSED', 'NEEDS_HR_COORDINATION', 'SLOT_CONFIRMED', 'SCHEDULED'].includes(interview.status)
 
   return (
     <Card
       title={<span className="flex items-center gap-2">Interview <Badge value={interview.status} /></span>}
-      actions={canEdit && (
+      actions={(canEdit || testingDone) && (
         <>
-          {canReplan && <Button size="sm" variant="secondary" onClick={() => setReplan(true)}>{interview.status === 'SCHEDULED' ? 'Reschedule' : 'Update availability & re-propose'}</Button>}
-          <Button size="sm" variant="ghost" onClick={() => setCancelOpen(true)}>Cancel interview</Button>
+          {testingDone && <Button size="sm" onClick={() => setDoneOpen(true)}>Mark interview done (testing)</Button>}
+          {canEdit && canReplan && <Button size="sm" variant="secondary" onClick={() => setReplan(true)}>{interview.status === 'SCHEDULED' ? 'Reschedule' : 'Update availability & re-propose'}</Button>}
+          {canEdit && <Button size="sm" variant="ghost" onClick={() => setCancelOpen(true)}>Cancel interview</Button>}
         </>
       )}
     >
@@ -95,6 +100,7 @@ function ActiveInterview({ interview, canEdit, children }: { interview: Intervie
         )}
         {children}
       </div>
+      {testingDone && <MarkDoneModal interview={interview} open={doneOpen} onClose={() => setDoneOpen(false)} />}
       <Modal open={replan} title="Update availability and re-propose slots" onClose={() => setReplan(false)} wide>
         <InterviewPlanForm initial={interview} submitLabel="Re-check calendar" busy={action.isPending} error={action.error}
           onSubmit={async (data) => { await action.mutateAsync({ id: interview.public_id, action: 'propose', body: data }); setReplan(false) }} />
@@ -125,7 +131,7 @@ export function InterviewPanel({ candidate, canEdit }: { candidate: Candidate; c
 
   if (interviews.isLoading) return <Loading />
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <ErrorAlert error={interviews.error} />
       {active ? <ActiveInterview interview={active} canEdit={canEdit} /> : canEdit && candidate.current_status === 'APPROVED_FOR_INTERVIEW' ? (
         <Card
@@ -149,6 +155,7 @@ export function InterviewPanel({ candidate, canEdit }: { candidate: Candidate; c
         <Card key={i.public_id} title={<span className="flex items-center gap-2">Interview · {formatDate(i.created_at)} <Badge value={i.status} /></span>}>
           <InterviewDetails interview={i} />
           {i.cancellation_reason && <p className="mt-3 text-sm text-slate-600">Cancelled: {i.cancellation_reason}</p>}
+          {i.feedback && <FeedbackView feedback={i.feedback} />}
         </Card>
       ))}
       {canEdit && <CommunicationsCard candidateId={candidate.public_id} />}
