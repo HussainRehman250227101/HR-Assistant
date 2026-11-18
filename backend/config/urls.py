@@ -1,7 +1,10 @@
 """Root URL configuration."""
 
+from django.conf import settings
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+
+from config.spa import spa_index
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -18,3 +21,7 @@ urlpatterns = [
     path("api/v1/dashboard/", include("dashboard.urls")),
     path("api/v1/audit/", include("audit.urls")),
 ]
+
+# Single-service deployment: everything that is not the API, admin or static files is a React route.
+if settings.FRONTEND_DIST_DIR:
+    urlpatterns.append(re_path(r"^(?!api/|admin/|static/).*$", spa_index))

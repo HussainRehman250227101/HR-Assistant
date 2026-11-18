@@ -1,0 +1,21 @@
+# Keep secrets, local data and build artefacts out of the Docker build context.
+.git
+.vscode
+.claude
+docs
+**/.env
+**/.env.*
+!backend/.env.example
+**/__pycache__
+**/*.py[cod]
+**/node_modules
+frontend/dist
+backend/myenv
+backend/.venv
+backend/media
+backend/sent-emails
+backend/staticfiles
+backend/data
+backend/*.sqlite3*
+backend/celerybeat-schedule*
+backend/celerybeat.pid

@@ -84,7 +84,9 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 MEDIA_URL = "media/"
-MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_ROOT = Path(env("MEDIA_ROOT", default=str(BASE_DIR / "media")))  # type:ignore  # a persistent volume in deployment
+# Built React app (frontend/dist) served by Django in a single-service deployment; empty = not served (local dev uses Vite).
+FRONTEND_DIST_DIR = env("FRONTEND_DIST_DIR", default="")  # type:ignore
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 SECURE_CONTENT_TYPE_NOSNIFF = True
@@ -174,7 +176,7 @@ CELERY_TASK_IGNORE_RESULT = True
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_ENABLE_UTC = True
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False  # keep Django's LOGGING (no resume text, contacts or keys in logs)
-CELERY_BEAT_SCHEDULE_FILENAME = str(BASE_DIR / "celerybeat-schedule")
+CELERY_BEAT_SCHEDULE_FILENAME = env("CELERY_BEAT_SCHEDULE_FILENAME", default=str(BASE_DIR / "celerybeat-schedule"))  # type:ignore
 CELERY_BEAT_SCHEDULE = {
     "auto-score-new-resumes": {
         "task": "workflows.tasks.auto_score_new_resumes",

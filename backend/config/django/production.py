@@ -34,6 +34,21 @@ SECURE_HSTS_PRELOAD = env.bool("SECURE_HSTS_PRELOAD", default=False)
 if env.bool("USE_X_FORWARDED_PROTO", default=False):
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
 
+# WhiteNoise serves the admin static files and, when FRONTEND_DIST_DIR is set (Docker image), the built React
+# app from the same origin as the API. Unknown non-API paths fall back to index.html (config/spa.py).
+MIDDLEWARE = [*MIDDLEWARE]  # noqa: F405
+MIDDLEWARE.insert(MIDDLEWARE.index("django.middleware.security.SecurityMiddleware") + 1,
+                  "whitenoise.middleware.WhiteNoiseMiddleware")
+STORAGES = {
+    "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
+    "staticfiles": {"BACKEND": "whitenoise.storage.CompressedStaticFilesStorage"},
+}
+if FRONTEND_DIST_DIR:  # noqa: F405
+    WHITENOISE_ROOT = FRONTEND_DIST_DIR  # noqa: F405
+
+# The web server, Celery worker and Celery beat share one SQLite file; wait for locks instead of failing at once.
+DATABASES["default"].setdefault("OPTIONS", {})["timeout"] = env.int("SQLITE_TIMEOUT_SECONDS", default=20)  # noqa: F405
+
 # Short-lived access tokens in production; the SPA refreshes them automatically.
 SIMPLE_JWT = {
     **SIMPLE_JWT,  # noqa: F405
