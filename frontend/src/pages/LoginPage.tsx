@@ -47,6 +47,16 @@ export function LoginPage() {
         <div className="text-center text-sm">
           <Link to="/forgot-password" className="text-indigo-700 hover:underline">Forgot your password?</Link>
         </div>
+        <Link
+          to="/docs"
+          className="group flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-3 text-left transition-colors hover:border-indigo-300 hover:bg-indigo-50"
+        >
+          <span>
+            <span className="block text-sm font-medium text-slate-900">Documentation</span>
+            <span className="block text-xs text-slate-500">How the assistant works: architecture, agents and controls</span>
+          </span>
+          <span aria-hidden className="text-indigo-600 transition-transform group-hover:translate-x-0.5">→</span>
+        </Link>
       </form>
     </div>
   )

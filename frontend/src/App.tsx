@@ -21,6 +21,7 @@ import { ShortlistQueuePage } from './pages/ShortlistQueuePage'
 
 // Loaded on demand so the ElevenLabs/WebRTC SDK is only downloaded when a browser voice session is opened.
 const ScreeningInvitePage = lazy(() => import('./pages/screening/ScreeningInvitePage').then((m) => ({ default: m.ScreeningInvitePage })))
+const DocsPage = lazy(() => import('./pages/docs/DocsPage').then((m) => ({ default: m.DocsPage })))
 const BrowserScreeningPage = lazy(() => import('./pages/screening/BrowserScreeningPage').then((m) => ({ default: m.BrowserScreeningPage })))
 
 function Protected({ children }: { children: React.ReactNode }) {
@@ -40,6 +41,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/docs" element={<Suspense fallback={<Loading />}><DocsPage /></Suspense>} />
       <Route path="/screening-invite/:token" element={<Suspense fallback={<Loading />}><ScreeningInvitePage /></Suspense>} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
